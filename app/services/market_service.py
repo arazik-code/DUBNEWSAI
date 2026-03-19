@@ -213,12 +213,14 @@ class MarketService:
         timestamp: datetime,
         source: str,
         description: str | None,
+        country: str = "UAE",
     ) -> EconomicIndicator:
         indicator = EconomicIndicator(
             indicator_name=indicator_name,
             indicator_code=indicator_code,
             value=value,
             unit=unit,
+            country=country,
             period=period,
             timestamp=timestamp,
             source=source,
@@ -227,6 +229,7 @@ class MarketService:
         db.add(indicator)
         await db.commit()
         await db.refresh(indicator)
+        await cache.delete(cache.MARKET_OVERVIEW)
         return indicator
 
     @staticmethod
@@ -345,6 +348,31 @@ class MarketService:
                 ),
             )
             .order_by(desc(CurrencyRate.timestamp))
+            .limit(limit)
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_latest_economic_indicators(db: AsyncSession, limit: int = 12) -> list[EconomicIndicator]:
+        subquery = (
+            select(
+                EconomicIndicator.indicator_code,
+                func.max(EconomicIndicator.timestamp).label("max_timestamp"),
+            )
+            .group_by(EconomicIndicator.indicator_code)
+            .subquery()
+        )
+        query = (
+            select(EconomicIndicator)
+            .join(
+                subquery,
+                and_(
+                    EconomicIndicator.indicator_code == subquery.c.indicator_code,
+                    EconomicIndicator.timestamp == subquery.c.max_timestamp,
+                ),
+            )
+            .order_by(desc(EconomicIndicator.timestamp), EconomicIndicator.indicator_name.asc())
             .limit(limit)
         )
         result = await db.execute(query)

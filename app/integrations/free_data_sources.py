@@ -87,17 +87,18 @@ class FreeDataAggregator:
         "construction_week": ("https://www.constructionweekonline.com/feed", NewsSource.MANUAL, "Construction Week"),
         "zawya_real_estate": ("https://www.zawya.com/en/rss/real-estate", NewsSource.MANUAL, "Zawya Real Estate"),
         "dubai_media_office": ("https://www.mediaoffice.ae/en/rss.xml", NewsSource.MANUAL, "Dubai Media Office"),
+        "reuters_world_news": ("https://feeds.reuters.com/Reuters/worldNews", NewsSource.MANUAL, "Reuters World News"),
     }
 
     UAE_SYMBOL_ALIASES: dict[str, list[str]] = {
-        "EMAAR": ["EMAAR.DU", "EMAARDEV.AE", "EMAAR.AE"],
-        "DAMAC": ["DAMAC.DU", "DAMAC.AE"],
-        "DEYAAR": ["DEYAAR.DU", "DEYAAR.AE"],
-        "ALDAR": ["ALDAR.AD", "ALDAR.AE"],
-        "AMLAK": ["AMLAK.DU", "AMLAK.AE"],
-        "UPP": ["UPP.DU", "UNIONPRO.AE", "UPP.AE"],
-        "ESHRAQ": ["ESHRAQ.AD", "ESHRAQ.AE"],
-        "RAKPROP": ["RAKPROP.AE", "RAKPROP.AD"],
+        "EMAAR": ["EMAAR.DU", "EMAAR:DFM", "EMAARDEV.AE", "EMAAR.AE"],
+        "DAMAC": ["DAMAC.DU", "DAMAC:DFM", "DAMAC.AE"],
+        "DEYAAR": ["DEYAAR.DU", "DEYAAR:DFM", "DEYAAR.AE"],
+        "ALDAR": ["ALDAR.AD", "ALDAR:ADX", "ALDAR.AE"],
+        "AMLAK": ["AMLAK.DU", "AMLAK:DFM", "AMLAK.AE"],
+        "UPP": ["UPP.DU", "UPP:DFM", "UNIONPRO.AE", "UPP.AE"],
+        "ESHRAQ": ["ESHRAQ.AD", "ESHRAQ:ADX", "ESHRAQ.AE"],
+        "RAKPROP": ["RAKPROP.AE", "RAKPROP:ADX", "RAKPROP.AD"],
         "^DFM": ["DFMGI.AE", "^DFMGI"],
     }
 
@@ -115,6 +116,14 @@ class FreeDataAggregator:
         "FP.CPI.TOTL.ZG": "Inflation, Consumer Prices",
         "SL.UEM.TOTL.ZS": "Unemployment Rate",
         "NE.CON.PRVT.ZS": "Household Final Consumption Expenditure",
+    }
+
+    FRED_INDICATORS: dict[str, tuple[str, str]] = {
+        "GDP": ("US GDP", "USA"),
+        "CPIAUCSL": ("US Consumer Price Index", "USA"),
+        "UNRATE": ("US Unemployment Rate", "USA"),
+        "FEDFUNDS": ("US Federal Funds Rate", "USA"),
+        "DGS10": ("US 10Y Treasury Yield", "USA"),
     }
 
     DUBAI_OPEN_DATASETS: dict[str, dict[str, str]] = {
@@ -342,45 +351,110 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_contextual_web(self) -> list[NormalizedNewsRecord]:
-        if not settings.CONTEXTUAL_WEB_API_KEY:
+    async def _fetch_bing_news(self) -> list[NormalizedNewsRecord]:
+        if not settings.BING_NEWS_API_KEY:
             return []
         payload = await self._request_json(
-            "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI",
+            "https://api.bing.microsoft.com/v7.0/news/search",
             params={
-                "q": "Dubai real estate",
-                "pageNumber": 1,
-                "pageSize": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
-                "autoCorrect": True,
-                "withThumbnails": True,
-                "fromPublishedDate": (datetime.now(timezone.utc) - timedelta(days=settings.NEWS_LOOKBACK_DAYS)).isoformat(),
+                "q": "Dubai real estate OR Dubai property market",
+                "mkt": "en-AE",
+                "count": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+                "freshness": "Week",
             },
-            headers={
-                "X-RapidAPI-Key": settings.CONTEXTUAL_WEB_API_KEY,
-                "X-RapidAPI-Host": "contextualwebsearch-websearch-v1.p.rapidapi.com",
-            },
+            headers={"Ocp-Apim-Subscription-Key": settings.BING_NEWS_API_KEY},
         )
         records: list[NormalizedNewsRecord] = []
         for article in payload.get("value", []):
             url = self._normalize_url(article.get("url"))
             if not url:
                 continue
-            image = article.get("image")
+            image = article.get("image", {})
+            thumbnail = image.get("thumbnail") if isinstance(image, dict) else None
             records.append(
                 NormalizedNewsRecord(
-                    title=self._clean_text(article.get("title"), 500) or "Untitled",
+                    title=self._clean_text(article.get("name"), 500) or "Untitled",
                     description=self._clean_text(article.get("description"), 5000),
-                    content=self._clean_text(article.get("body"), 50000),
+                    content=self._clean_text(article.get("description"), 50000),
                     url=url,
                     source=NewsSource.RAPID_API,
-                    source_name="Contextual Web Search",
+                    source_name="Bing News",
                     author=None,
-                    category=self._category_from_text(article.get("title", ""), article.get("description")),
+                    category=self._category_from_text(article.get("name", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("datePublished")),
-                    image_url=self._normalize_url(image.get("url")) if isinstance(image, dict) else None,
+                    image_url=self._normalize_url(thumbnail.get("contentUrl")) if isinstance(thumbnail, dict) else None,
                 )
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+
+    async def _fetch_contextual_web(self) -> list[NormalizedNewsRecord]:
+        rapid_api_key = settings.CONTEXTUAL_WEB_API_KEY or settings.RAPID_API_KEY
+        if not rapid_api_key:
+            return []
+        endpoints = [
+            (
+                "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI",
+                {
+                    "q": "Dubai real estate",
+                    "pageNumber": 1,
+                    "pageSize": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+                    "autoCorrect": True,
+                    "withThumbnails": True,
+                    "fromPublishedDate": (datetime.now(timezone.utc) - timedelta(days=settings.NEWS_LOOKBACK_DAYS)).isoformat(),
+                },
+                {
+                    "X-RapidAPI-Key": rapid_api_key,
+                    "X-RapidAPI-Host": "contextualwebsearch-websearch-v1.p.rapidapi.com",
+                },
+                "value",
+            ),
+            (
+                "https://real-time-web-search.p.rapidapi.com/search-news",
+                {
+                    "query": "Dubai real estate OR Dubai property market",
+                    "limit": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+                    "time": "w",
+                },
+                {
+                    "X-RapidAPI-Key": rapid_api_key,
+                    "X-RapidAPI-Host": "real-time-web-search.p.rapidapi.com",
+                },
+                "data",
+            ),
+        ]
+
+        for endpoint, params, headers, items_key in endpoints:
+            try:
+                payload = await self._request_json(endpoint, params=params, headers=headers)
+            except Exception as exc:
+                logger.debug("RapidAPI news endpoint {} failed: {}", endpoint, str(exc))
+                continue
+
+            records: list[NormalizedNewsRecord] = []
+            for article in payload.get(items_key, []):
+                url = self._normalize_url(article.get("url") or article.get("link"))
+                if not url:
+                    continue
+                image = article.get("image")
+                records.append(
+                    NormalizedNewsRecord(
+                        title=self._clean_text(article.get("title"), 500) or "Untitled",
+                        description=self._clean_text(article.get("description") or article.get("snippet"), 5000),
+                        content=self._clean_text(article.get("body") or article.get("snippet"), 50000),
+                        url=url,
+                        source=NewsSource.RAPID_API,
+                        source_name="RapidAPI News Search",
+                        author=self._clean_text(article.get("author"), 200),
+                        category=self._category_from_text(article.get("title", ""), article.get("description") or article.get("snippet")),
+                        published_at=self._parse_datetime(article.get("datePublished") or article.get("published") or article.get("published_datetime_utc")),
+                        image_url=self._normalize_url(image.get("url")) if isinstance(image, dict) else self._normalize_url(article.get("thumbnail")),
+                    )
+                )
+            relevant_records = [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+            if relevant_records:
+                return relevant_records
+
+        return []
 
     async def _fetch_single_rss_feed(self, feed_name: str, feed_url: str, source: NewsSource, source_name: str) -> list[NormalizedNewsRecord]:
         try:
@@ -461,7 +535,16 @@ class FreeDataAggregator:
     async def fetch_news_articles(self, *, include_api: bool = True, include_rss: bool = True, include_scraped: bool = True) -> list[NewsArticleCreate]:
         jobs: list[Any] = []
         if include_api:
-            jobs.extend([self._fetch_newsapi(), self._fetch_gnews(), self._fetch_currents(), self._fetch_newsdata(), self._fetch_contextual_web()])
+            jobs.extend(
+                [
+                    self._fetch_newsapi(),
+                    self._fetch_gnews(),
+                    self._fetch_currents(),
+                    self._fetch_newsdata(),
+                    self._fetch_bing_news(),
+                    self._fetch_contextual_web(),
+                ]
+            )
         if include_rss:
             jobs.append(self._fetch_rss())
         if include_scraped:
@@ -501,7 +584,7 @@ class FreeDataAggregator:
         all_aliases: list[str] = []
         for item in watchlist_symbols:
             aliases = self.UAE_SYMBOL_ALIASES.get(item.symbol.upper(), [item.symbol.upper()])
-            ordered_aliases = [item.symbol.upper(), *aliases]
+            ordered_aliases = [*aliases, item.symbol.upper()]
             deduped = list(dict.fromkeys(alias.upper() for alias in ordered_aliases))
             aliases_by_symbol[item.symbol.upper()] = deduped
             for alias in deduped:
@@ -582,21 +665,21 @@ class FreeDataAggregator:
     async def _fetch_yahoo_quotes(self, watchlist_symbols: list[WatchlistSymbol]) -> list[NormalizedMarketQuote]:
         if not watchlist_symbols:
             return []
-        aliases_by_symbol, all_aliases = self._build_symbol_aliases(watchlist_symbols)
+        aliases_by_symbol, _ = self._build_symbol_aliases(watchlist_symbols)
+        yahoo_aliases = [aliases_by_symbol[item.symbol.upper()][0] for item in watchlist_symbols if aliases_by_symbol.get(item.symbol.upper())]
         try:
-            history = await self._download_yahoo_history(all_aliases)
+            history = await self._download_yahoo_history(yahoo_aliases)
         except Exception as exc:
             logger.warning("Yahoo Finance batch download failed: {}", str(exc))
             return []
 
         quotes: list[NormalizedMarketQuote] = []
         for item in watchlist_symbols:
-            for alias in aliases_by_symbol[item.symbol.upper()]:
-                frame = self._extract_yahoo_frame(history, alias, len(all_aliases))
-                quote = self._build_quote_from_history(item, alias, frame)
-                if quote is not None:
-                    quotes.append(quote)
-                    break
+            alias = aliases_by_symbol[item.symbol.upper()][0]
+            frame = self._extract_yahoo_frame(history, alias, len(yahoo_aliases))
+            quote = self._build_quote_from_history(item, alias, frame)
+            if quote is not None:
+                quotes.append(quote)
         return quotes
 
     async def _fetch_twelve_data_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
@@ -655,10 +738,20 @@ class FreeDataAggregator:
     async def _fetch_fmp_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
         if not settings.FMP_API_KEY:
             return None
-        payload = await self._request_json(f"https://financialmodelingprep.com/api/v3/quote-short/{alias}", params={"apikey": settings.FMP_API_KEY})
-        if not isinstance(payload, list) or not payload:
+        quote_data: dict[str, Any] | None = None
+        for endpoint, params in [
+            ("https://financialmodelingprep.com/stable/quote", {"symbol": alias, "apikey": settings.FMP_API_KEY}),
+            (f"https://financialmodelingprep.com/api/v3/quote-short/{alias}", {"apikey": settings.FMP_API_KEY}),
+        ]:
+            payload = await self._request_json(endpoint, params=params)
+            if isinstance(payload, list) and payload:
+                quote_data = payload[0]
+                break
+            if isinstance(payload, dict) and payload.get("symbol"):
+                quote_data = payload
+                break
+        if quote_data is None:
             return None
-        quote_data = payload[0]
         price = self._safe_float(quote_data.get("price"))
         if price is None or price <= 0:
             return None
@@ -736,7 +829,138 @@ class FreeDataAggregator:
 
         return list(quotes_by_symbol.values())
 
+    async def _fetch_massive_forex_rates(self) -> list[NormalizedCurrencyRate]:
+        if not settings.MASSIVE_API_KEY:
+            return []
+
+        rates: list[NormalizedCurrencyRate] = []
+        for from_currency, to_currency in self.CURRENCY_PAIRS:
+            try:
+                payload = await self._request_json(
+                    f"https://api.massive.com/v2/aggs/ticker/C:{from_currency}{to_currency}/prev",
+                    params={"adjusted": "true", "apiKey": settings.MASSIVE_API_KEY},
+                )
+            except Exception as exc:
+                logger.debug("Massive forex fetch failed for {}/{}: {}", from_currency, to_currency, str(exc))
+                continue
+
+            result = payload.get("results", {})
+            rate = self._safe_float(result.get("c"))
+            timestamp = result.get("t")
+            if rate is None or rate <= 0 or timestamp is None:
+                continue
+            rates.append(
+                NormalizedCurrencyRate(
+                    from_currency=from_currency,
+                    to_currency=to_currency,
+                    rate=rate,
+                    timestamp=datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc),
+                )
+            )
+        return rates
+
+    async def _fetch_exchange_rate_api_rates(self) -> list[NormalizedCurrencyRate]:
+        if not settings.EXCHANGERATE_API_KEY:
+            return []
+
+        rates: list[NormalizedCurrencyRate] = []
+        for base_currency, quote_currency in self.CURRENCY_PAIRS:
+            try:
+                payload = await self._request_json(
+                    f"https://v6.exchangerate-api.com/v6/{settings.EXCHANGERATE_API_KEY}/pair/{base_currency}/{quote_currency}"
+                )
+            except Exception as exc:
+                logger.debug("ExchangeRate-API fetch failed for {}/{}: {}", base_currency, quote_currency, str(exc))
+                continue
+            rate = self._safe_float(payload.get("conversion_rate"))
+            if rate is None:
+                continue
+            rates.append(
+                NormalizedCurrencyRate(
+                    from_currency=base_currency,
+                    to_currency=quote_currency,
+                    rate=rate,
+                    timestamp=self._parse_datetime(payload.get("time_last_update_utc")),
+                )
+            )
+        return rates
+
+    async def _fetch_currencyapi_rates(self) -> list[NormalizedCurrencyRate]:
+        if not settings.CURRENCYAPI_KEY:
+            return []
+
+        pairs_by_base: dict[str, set[str]] = {}
+        for base_currency, quote_currency in self.CURRENCY_PAIRS:
+            pairs_by_base.setdefault(base_currency, set()).add(quote_currency)
+
+        rates: list[NormalizedCurrencyRate] = []
+        for base_currency, quote_currencies in pairs_by_base.items():
+            try:
+                payload = await self._request_json(
+                    "https://api.currencyapi.com/v3/latest",
+                    params={
+                        "apikey": settings.CURRENCYAPI_KEY,
+                        "base_currency": base_currency,
+                        "currencies": ",".join(sorted(quote_currencies)),
+                    },
+                )
+            except Exception as exc:
+                logger.debug("CurrencyAPI fetch failed for {}: {}", base_currency, str(exc))
+                continue
+
+            for quote_currency, quote_payload in payload.get("data", {}).items():
+                rate = self._safe_float(quote_payload.get("value"))
+                if rate is None:
+                    continue
+                rates.append(
+                    NormalizedCurrencyRate(
+                        from_currency=base_currency,
+                        to_currency=quote_currency,
+                        rate=rate,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                )
+        return rates
+
+    async def _fetch_fixer_rates(self) -> list[NormalizedCurrencyRate]:
+        if not settings.FIXER_API_KEY:
+            return []
+
+        try:
+            payload = await self._request_json(
+                "https://data.fixer.io/api/latest",
+                params={"access_key": settings.FIXER_API_KEY},
+            )
+        except Exception as exc:
+            logger.debug("Fixer fetch failed: {}", str(exc))
+            return []
+
+        eur_rates = payload.get("rates", {})
+        eur_to_aed = self._safe_float(eur_rates.get("AED"))
+        if eur_to_aed in (None, 0):
+            return []
+
+        rates: list[NormalizedCurrencyRate] = []
+        for base_currency, quote_currency in self.CURRENCY_PAIRS:
+            eur_to_base = 1.0 if base_currency == "EUR" else self._safe_float(eur_rates.get(base_currency))
+            eur_to_quote = 1.0 if quote_currency == "EUR" else self._safe_float(eur_rates.get(quote_currency))
+            if eur_to_base in (None, 0) or eur_to_quote is None:
+                continue
+            rates.append(
+                NormalizedCurrencyRate(
+                    from_currency=base_currency,
+                    to_currency=quote_currency,
+                    rate=eur_to_quote / eur_to_base,
+                    timestamp=self._parse_datetime(payload.get("date")),
+                )
+            )
+        return rates
+
     async def fetch_currency_rates(self) -> list[NormalizedCurrencyRate]:
+        massive_rates = await self._fetch_massive_forex_rates()
+        if massive_rates:
+            return massive_rates
+
         pairs_by_base: dict[str, set[str]] = {}
         for base_currency, quote_currency in self.CURRENCY_PAIRS:
             pairs_by_base.setdefault(base_currency, set()).add(quote_currency)
@@ -744,19 +968,14 @@ class FreeDataAggregator:
         rates: list[NormalizedCurrencyRate] = []
         for base_currency, quote_currencies in pairs_by_base.items():
             payload: dict[str, Any] | None = None
-            for endpoint, params in [
-                ("https://api.frankfurter.app/latest", {"base": base_currency, "symbols": ",".join(sorted(quote_currencies))}),
-                ("https://api.frankfurter.dev/latest", {"base": base_currency, "symbols": ",".join(sorted(quote_currencies))}),
-                ("https://api.frankfurter.dev/v1/latest", {"base": base_currency, "symbols": ",".join(sorted(quote_currencies))}),
-            ]:
-                try:
-                    payload = await self._request_json(endpoint, params=params)
-                    if payload.get("rates"):
-                        break
-                except Exception:
-                    payload = None
+            try:
+                payload = await self._request_json(
+                    settings.FRANKFURTER_API_URL,
+                    params={"base": base_currency, "symbols": ",".join(sorted(quote_currencies))},
+                )
+            except Exception:
+                payload = None
             if not payload or not payload.get("rates"):
-                logger.warning("Frankfurter unavailable for base {}", base_currency)
                 continue
 
             timestamp = self._parse_datetime(payload.get("date"))
@@ -775,6 +994,15 @@ class FreeDataAggregator:
 
         if rates:
             return rates
+
+        for fallback_fetcher in (
+            self._fetch_exchange_rate_api_rates,
+            self._fetch_currencyapi_rates,
+            self._fetch_fixer_rates,
+        ):
+            fallback_rates = await fallback_fetcher()
+            if fallback_rates:
+                return fallback_rates
 
         if not settings.ALPHA_VANTAGE_KEY:
             return []
@@ -831,6 +1059,48 @@ class FreeDataAggregator:
                     )
                 )
                 break
+        return indicators
+
+    async def fetch_fred_indicators(self) -> list[NormalizedEconomicIndicator]:
+        if not settings.FRED_API_KEY:
+            return []
+
+        indicators: list[NormalizedEconomicIndicator] = []
+        for series_id, (indicator_name, country) in self.FRED_INDICATORS.items():
+            try:
+                payload = await self._request_json(
+                    "https://api.stlouisfed.org/fred/series/observations",
+                    params={
+                        "series_id": series_id,
+                        "api_key": settings.FRED_API_KEY,
+                        "file_type": "json",
+                        "limit": 1,
+                        "sort_order": "desc",
+                    },
+                )
+            except Exception as exc:
+                logger.warning("FRED fetch failed for {}: {}", series_id, str(exc))
+                continue
+
+            observations = payload.get("observations", [])
+            if not observations:
+                continue
+            record = observations[0]
+            value = self._safe_float(record.get("value"))
+            if value is None:
+                continue
+            indicators.append(
+                NormalizedEconomicIndicator(
+                    indicator_name=indicator_name,
+                    indicator_code=series_id,
+                    value=value,
+                    unit=None,
+                    period=record.get("date"),
+                    timestamp=datetime.now(timezone.utc),
+                    source=f"FRED:{country}",
+                    description=indicator_name,
+                )
+            )
         return indicators
 
     async def fetch_dubai_open_data_metadata(self) -> list[dict[str, Any]]:

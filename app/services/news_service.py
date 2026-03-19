@@ -9,19 +9,35 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.core.cache import cache
 from app.core.exceptions import ConflictError, ResourceNotFoundError
 from app.core.metrics import articles_processed
+from app.integrations.article_content_extractor import ArticleContentExtractor
 from app.models.news import NewsArticle, NewsCategory, NewsSentiment, NewsSource, NewsTag
 from app.schemas.news import NewsArticleCreate, NewsArticleResponse, NewsFilterParams, NewsListResponse
 from app.services.ai_service import AIService
 from app.utils.helpers import slugify
+
+settings = get_settings()
 
 
 class NewsService:
     @staticmethod
     def generate_url_hash(url: str) -> str:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _content_needs_enrichment(content: str | None, description: str | None = None) -> bool:
+        normalized_content = (content or "").strip()
+        normalized_description = (description or "").strip()
+        if not normalized_content:
+            return True
+        if "[+" in normalized_content or normalized_content.endswith("..."):
+            return True
+        if normalized_description and normalized_content == normalized_description:
+            return True
+        return len(normalized_content) < settings.ARTICLE_MIN_CONTENT_LENGTH
 
     @staticmethod
     def _extract_keywords(text: str, limit: int = 8) -> list[str]:
@@ -190,6 +206,59 @@ class NewsService:
         return article
 
     @staticmethod
+    async def enrich_article_content(
+        db: AsyncSession,
+        article: NewsArticle,
+        *,
+        force: bool = False,
+    ) -> NewsArticle:
+        if not force and not NewsService._content_needs_enrichment(article.content, article.description):
+            return article
+
+        extractor = ArticleContentExtractor()
+        try:
+            extracted = await extractor.extract(article.url)
+        finally:
+            await extractor.close()
+
+        if extracted is None:
+            return article
+
+        updated = False
+        if extracted.content and (
+            force
+            or NewsService._content_needs_enrichment(article.content, article.description)
+            or len(extracted.content) > len((article.content or "").strip())
+        ):
+            article.content = extracted.content
+            updated = True
+
+        if extracted.description and (
+            not article.description or len(extracted.description) > len(article.description)
+        ):
+            article.description = extracted.description
+            updated = True
+
+        if extracted.image_url and not article.image_url:
+            article.image_url = extracted.image_url
+            updated = True
+
+        if not updated:
+            return article
+
+        analysis = await AIService.analyze_article(article)
+        article.sentiment = NewsSentiment(analysis["sentiment"])
+        article.sentiment_score = analysis["sentiment_score"]
+        article.keywords = analysis["keywords"] or None
+        article.entities = analysis["entities"] or None
+        article.relevance_score = analysis["relevance_score"]
+
+        await db.commit()
+        await db.refresh(article)
+        await NewsService.invalidate_article_cache(article.id)
+        return article
+
+    @staticmethod
     async def bulk_create_articles(
         db: AsyncSession,
         articles_data: list[NewsArticleCreate],
@@ -262,14 +331,21 @@ class NewsService:
     async def get_article_by_id(db: AsyncSession, article_id: int) -> NewsArticle | dict:
         cached_article = await cache.get_cached_news_detail(article_id)
         if cached_article is not None:
-            result = await db.execute(select(NewsArticle).where(NewsArticle.id == article_id))
+            result = await db.execute(
+                select(NewsArticle)
+                .options(selectinload(NewsArticle.tags))
+                .where(NewsArticle.id == article_id)
+            )
             article = result.scalar_one_or_none()
             if article is not None:
+                if NewsService._content_needs_enrichment(article.content, article.description):
+                    article = await NewsService.enrich_article_content(db, article)
                 article.view_count += 1
                 await db.commit()
-                if isinstance(cached_article, dict):
-                    cached_article["view_count"] = int(cached_article.get("view_count", 0)) + 1
-                    await cache.cache_news_detail(article_id, cached_article, ttl=600)
+                await db.refresh(article)
+                article_payload = NewsArticleResponse.model_validate(article).model_dump(mode="json")
+                await cache.cache_news_detail(article_id, article_payload, ttl=600)
+                return article_payload
             return cached_article
 
         result = await db.execute(
@@ -280,6 +356,9 @@ class NewsService:
         article = result.scalar_one_or_none()
         if article is None:
             raise ResourceNotFoundError("Article not found")
+
+        if NewsService._content_needs_enrichment(article.content, article.description):
+            article = await NewsService.enrich_article_content(db, article)
 
         article.view_count += 1
         await db.commit()

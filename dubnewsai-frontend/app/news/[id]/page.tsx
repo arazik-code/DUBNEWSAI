@@ -73,6 +73,10 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
   if (!article) {
     notFound()
   }
+  const contentBlocks = (article.content || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -135,8 +139,14 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             <p className="text-lg leading-8 text-slate-700 dark:text-slate-300">{article.description}</p>
           ) : null}
 
-          <div className="text-base leading-8 text-slate-700 dark:text-slate-300">
-            {article.content || "No long-form content is available for this article yet."}
+          <div className="space-y-5 text-base leading-8 text-slate-700 dark:text-slate-300">
+            {contentBlocks.length ? (
+              contentBlocks.map((block, index) => (
+                <p key={`${article.id}-block-${index}`}>{block}</p>
+              ))
+            ) : (
+              <p>No long-form content is available for this article yet.</p>
+            )}
           </div>
 
           {article.keywords?.length ? (

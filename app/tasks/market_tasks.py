@@ -81,6 +81,7 @@ async def _update_currency_rates() -> None:
         try:
             rates = await aggregator.fetch_currency_rates()
             indicators = await aggregator.fetch_world_bank_indicators()
+            fred_indicators = await aggregator.fetch_fred_indicators()
             try:
                 trading_economics = await aggregator.fetch_trading_economics_indicators()
             except Exception as exc:
@@ -96,7 +97,7 @@ async def _update_currency_rates() -> None:
                     timestamp=rate.timestamp,
                 )
 
-            for indicator in indicators:
+            for indicator in [*indicators, *fred_indicators]:
                 await MarketService.store_economic_indicator(
                     db,
                     indicator_name=indicator.indicator_name,
@@ -107,6 +108,7 @@ async def _update_currency_rates() -> None:
                     timestamp=indicator.timestamp,
                     source=indicator.source,
                     description=indicator.description,
+                    country="UAE" if indicator.source == "World Bank" else "USA",
                 )
 
             for item in trading_economics:
@@ -120,12 +122,13 @@ async def _update_currency_rates() -> None:
                     timestamp=datetime.now(timezone.utc),
                     source="Trading Economics",
                     description=item["category"],
+                    country="UAE",
                 )
 
             logger.info(
                 "Updated {} currency rates and {} economic indicators",
                 len(rates),
-                len(indicators) + len(trading_economics),
+                len(indicators) + len(fred_indicators) + len(trading_economics),
             )
         except Exception as exc:
             logger.error("Error in currency rate update task: {}", str(exc))

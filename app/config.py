@@ -34,18 +34,27 @@ class Settings(BaseSettings):
     CURRENTS_API_KEY: str = ""
     NEWSDATA_API_KEY: str = ""
     CONTEXTUAL_WEB_API_KEY: str = ""
+    BING_NEWS_API_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
     TWELVE_DATA_API_KEY: str = ""
     FINNHUB_API_KEY: str = ""
     FMP_API_KEY: str = ""
+    MASSIVE_API_KEY: str = ""
+    MARKETSTACK_API_KEY: str = ""
+    FRED_API_KEY: str = ""
     OPENWEATHER_KEY: str = ""
     RAPID_API_KEY: str = ""
+    EXCHANGERATE_API_KEY: str = ""
+    CURRENCYAPI_KEY: str = ""
+    FIXER_API_KEY: str = ""
+    GOOGLE_PLACES_API_KEY: str = ""
     RESEND_API_KEY: str = ""
     UPSTASH_REDIS_REST_URL: str = ""
     UPSTASH_REDIS_REST_TOKEN: str = ""
     YOUTUBE_API_KEY: str = ""
     TWITTER_BEARER_TOKEN: str = ""
     TRADING_ECONOMICS_API_KEY: str = ""
+    FRANKFURTER_API_URL: str = "https://api.frankfurter.dev/v1/latest"
 
     RATE_LIMIT_PER_MINUTE: int = 60
 
@@ -65,6 +74,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     NEWS_LOOKBACK_DAYS: int = 7
     NEWS_PROVIDER_ARTICLE_LIMIT: int = 10
+    ARTICLE_MIN_CONTENT_LENGTH: int = 900
 
     model_config = SettingsConfigDict(
         env_file=".env",

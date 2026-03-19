@@ -35,6 +35,16 @@ async def _fetch_newsapi_articles() -> None:
                     continue
                 created_articles.append(created_article)
 
+            for article in sorted(
+                created_articles,
+                key=lambda item: (item.relevance_score, item.published_at),
+                reverse=True,
+            )[:3]:
+                try:
+                    await NewsService.enrich_article_content(db, article)
+                except Exception as exc:
+                    logger.debug("Article enrichment skipped for {}: {}", article.url, str(exc))
+
             for article in created_articles:
                 await AlertService.check_keyword_alerts(db, article)
                 await AlertService.check_sentiment_alerts(db, article)
@@ -73,6 +83,16 @@ async def _fetch_rss_feeds() -> None:
                     skipped += 1
                     continue
                 created_articles.append(created_article)
+
+            for article in sorted(
+                created_articles,
+                key=lambda item: (item.relevance_score, item.published_at),
+                reverse=True,
+            )[:3]:
+                try:
+                    await NewsService.enrich_article_content(db, article)
+                except Exception as exc:
+                    logger.debug("Article enrichment skipped for {}: {}", article.url, str(exc))
 
             for article in created_articles:
                 await AlertService.check_keyword_alerts(db, article)

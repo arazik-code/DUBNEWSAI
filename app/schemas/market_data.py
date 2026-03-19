@@ -34,10 +34,13 @@ class CurrencyRateResponse(BaseModel):
 
 class EconomicIndicatorResponse(BaseModel):
     indicator_name: str
+    indicator_code: str
     value: float
     unit: str | None
+    country: str
     period: str | None
     timestamp: datetime
+    source: str | None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,4 +49,5 @@ class MarketOverview(BaseModel):
     stocks: list[MarketDataResponse]
     indices: list[MarketDataResponse]
     currencies: list[CurrencyRateResponse]
+    economic_indicators: list[EconomicIndicatorResponse]
     real_estate_companies: list[MarketDataResponse]

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { apiClient } from "@/lib/api/client"
-import type { MarketStock } from "@/types"
+import type { EconomicIndicator, MarketOverviewResponse, MarketStock } from "@/types"
 
 export function useMarketData(limit = 12) {
   return useQuery<MarketStock[]>({
@@ -23,5 +23,27 @@ export function useMarketSymbol(symbol: string) {
       return data
     },
     enabled: Boolean(symbol)
+  })
+}
+
+export function useMarketOverview() {
+  return useQuery<MarketOverviewResponse>({
+    queryKey: ["market", "overview"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<MarketOverviewResponse>("/market/overview")
+      return data
+    }
+  })
+}
+
+export function useEconomicIndicators(limit = 12) {
+  return useQuery<EconomicIndicator[]>({
+    queryKey: ["market", "economic-indicators", limit],
+    queryFn: async () => {
+      const { data } = await apiClient.get<EconomicIndicator[]>("/market/economic-indicators", {
+        params: { limit }
+      })
+      return data
+    }
   })
 }
