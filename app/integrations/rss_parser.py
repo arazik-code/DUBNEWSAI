@@ -10,13 +10,22 @@ from loguru import logger
 class RSSFeedParser:
     RSS_FEEDS = {
         "gulf_news_real_estate": "https://gulfnews.com/business/property/rss",
-        "the_national_property": "https://www.thenationalnews.com/business/property/rss",
+        "the_national_property": "https://www.thenationalnews.com/business/property/rss/",
         "khaleej_times_real_estate": "https://www.khaleejtimes.com/real-estate/rss",
         "arabian_business": "https://www.arabianbusiness.com/industries/real-estate/rss",
     }
 
     def __init__(self) -> None:
-        self.client = httpx.AsyncClient(timeout=30)
+        self.client = httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+                )
+            },
+        )
 
     async def close(self) -> None:
         await self.client.aclose()

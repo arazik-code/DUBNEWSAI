@@ -17,6 +17,8 @@ class MarketDataResponse(BaseModel):
     volume: int
     market_cap: float | None
     data_timestamp: datetime
+    is_live_data: bool = True
+    data_source: str = "market_data"
 
     model_config = ConfigDict(from_attributes=True)
 

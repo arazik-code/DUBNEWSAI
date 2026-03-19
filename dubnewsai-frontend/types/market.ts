@@ -10,4 +10,6 @@ export interface MarketStock {
   exchange?: string | null
   market_cap?: number | null
   data_timestamp: string
+  is_live_data?: boolean
+  data_source?: string
 }

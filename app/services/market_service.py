@@ -13,6 +13,44 @@ from app.models.market_data import CurrencyRate, MarketData, MarketType, Watchli
 
 class MarketService:
     @staticmethod
+    def _watchlist_to_market_snapshot(watchlist: WatchlistSymbol) -> dict:
+        return {
+            "id": watchlist.id,
+            "symbol": watchlist.symbol,
+            "name": watchlist.name,
+            "market_type": watchlist.market_type,
+            "exchange": watchlist.exchange,
+            "price": 0.0,
+            "change": 0.0,
+            "change_percent": 0.0,
+            "volume": 0,
+            "market_cap": None,
+            "data_timestamp": datetime.now(timezone.utc),
+            "is_live_data": False,
+            "data_source": "watchlist_fallback",
+        }
+
+    @staticmethod
+    async def _get_watchlist_fallback(
+        db: AsyncSession,
+        market_type: MarketType | None = None,
+        limit: int = 50,
+        real_estate_only: bool = False,
+    ) -> list[dict]:
+        query = (
+            select(WatchlistSymbol)
+            .where(WatchlistSymbol.is_active.is_(True))
+            .order_by(WatchlistSymbol.priority.desc(), WatchlistSymbol.symbol.asc())
+        )
+        if market_type is not None:
+            query = query.where(WatchlistSymbol.market_type == market_type)
+        if real_estate_only:
+            query = query.where(WatchlistSymbol.is_real_estate_company.is_(True))
+
+        result = await db.execute(query.limit(limit))
+        return [MarketService._watchlist_to_market_snapshot(item) for item in result.scalars().all()]
+
+    @staticmethod
     async def update_stock_quote(
         db: AsyncSession,
         symbol: str,
@@ -124,12 +162,17 @@ class MarketService:
         query = query.order_by(desc(MarketData.data_timestamp)).limit(limit)
         result = await db.execute(query)
         rows = list(result.scalars().all())
+        if not rows:
+            fallback_rows = await MarketService._get_watchlist_fallback(db, market_type=market_type, limit=limit)
+            if fallback_rows:
+                await cache.set(cache_key, fallback_rows, ttl=60)
+                return fallback_rows
         serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
         await cache.set(cache_key, serialized, ttl=60)
         return serialized
 
     @staticmethod
-    async def get_real_estate_companies(db: AsyncSession) -> list[MarketData]:
+    async def get_real_estate_companies(db: AsyncSession) -> list[MarketData] | list[dict]:
         cached_companies = await cache.get_cached_market_real_estate()
         if cached_companies is not None:
             return [MarketDataResponse.model_validate(company) for company in cached_companies]
@@ -163,6 +206,14 @@ class MarketService:
         ).order_by(MarketData.symbol.asc())
         result = await db.execute(query)
         companies = list(result.scalars().all())
+        if not companies:
+            fallback_companies = await MarketService._get_watchlist_fallback(
+                db,
+                market_type=MarketType.STOCK,
+                real_estate_only=True,
+            )
+            await cache.cache_market_real_estate(fallback_companies, ttl=120)
+            return [MarketDataResponse.model_validate(company) for company in fallback_companies]
         await cache.cache_market_real_estate(
             [MarketDataResponse.model_validate(company).model_dump(mode="json") for company in companies],
             ttl=120,
@@ -197,7 +248,7 @@ class MarketService:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_latest_symbol_data(db: AsyncSession, symbol: str) -> MarketData | None:
+    async def get_latest_symbol_data(db: AsyncSession, symbol: str) -> MarketData | dict | None:
         cached_symbol = await cache.get_cached_market_symbol(symbol)
         if cached_symbol is not None:
             return cached_symbol
@@ -215,4 +266,17 @@ class MarketService:
                 MarketDataResponse.model_validate(latest).model_dump(mode="json"),
                 ttl=60,
             )
-        return latest
+            return latest
+
+        watchlist_result = await db.execute(
+            select(WatchlistSymbol)
+            .where(WatchlistSymbol.symbol == symbol.upper(), WatchlistSymbol.is_active.is_(True))
+            .limit(1)
+        )
+        watchlist = watchlist_result.scalar_one_or_none()
+        if watchlist is None:
+            return None
+
+        fallback_snapshot = MarketService._watchlist_to_market_snapshot(watchlist)
+        await cache.cache_market_symbol(symbol, fallback_snapshot, ttl=60)
+        return fallback_snapshot

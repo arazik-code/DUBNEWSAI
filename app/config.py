@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    ENABLE_EMBEDDED_SYNC: bool | None = None
+    EMBEDDED_NEWS_SYNC_MINUTES: int = 30
 
     DATABASE_URL: str
     DB_ECHO: bool = False
@@ -87,6 +89,12 @@ class Settings(BaseSettings):
         if frontend_origin and frontend_origin not in origins:
             origins.append(frontend_origin)
         return origins or ["http://localhost:3000"]
+
+    @property
+    def embedded_sync_enabled(self) -> bool:
+        if self.ENABLE_EMBEDDED_SYNC is not None:
+            return self.ENABLE_EMBEDDED_SYNC
+        return self.ENVIRONMENT.lower() == "production"
 
 
 @lru_cache

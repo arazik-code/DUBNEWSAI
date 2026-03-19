@@ -46,8 +46,17 @@ export function LiveTicker() {
 function TickerItem({
   stock
 }: {
-  stock: { symbol: string; price: number; change: number; change_percent: number }
+  stock: { symbol: string; price: number; change: number; change_percent: number; is_live_data?: boolean }
 }) {
+  if (stock.is_live_data === false) {
+    return (
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="text-sm font-bold text-white">{stock.symbol}</span>
+        <span className="text-xs uppercase tracking-[0.2em] text-amber-300">Awaiting feed</span>
+      </div>
+    )
+  }
+
   const isPositive = stock.change >= 0
 
   return (

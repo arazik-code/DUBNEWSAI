@@ -31,6 +31,7 @@ from app.core.monitoring import BetterStackMonitor
 from app.core.redis_publisher import redis_publisher
 from app.core.rate_limit import limiter
 from app.database import engine, get_db
+from app.services.embedded_sync_service import EmbeddedSyncService
 
 settings = get_settings()
 setup_logging()
@@ -45,12 +46,17 @@ async def lifespan(_: FastAPI):
     await cache.connect()
     await redis_publisher.connect()
     metrics_task = asyncio.create_task(MetricsCollector.collect_system_metrics())
+    embedded_sync_task: asyncio.Task[None] | None = None
+    if settings.embedded_sync_enabled:
+        await EmbeddedSyncService.bootstrap_news_if_empty()
+        embedded_sync_task = asyncio.create_task(EmbeddedSyncService.run_news_sync_loop())
     await BetterStackMonitor.send_heartbeat(settings.BETTERSTACK_HEARTBEAT_CHECK_ID)
     logger.info("Application started")
     yield
     metrics_task.cancel()
     with suppress(asyncio.CancelledError):
         await metrics_task
+    await EmbeddedSyncService.shutdown_task(embedded_sync_task)
     await cache.disconnect()
     await redis_publisher.disconnect()
     await engine.dispose()

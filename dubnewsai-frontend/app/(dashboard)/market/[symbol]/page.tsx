@@ -33,6 +33,7 @@ export default function MarketSymbolPage({ params }: MarketSymbolPageProps) {
   }
 
   const positive = data.change >= 0
+  const hasLiveData = data.is_live_data !== false
 
   return (
     <div className="space-y-6">
@@ -45,15 +46,29 @@ export default function MarketSymbolPage({ params }: MarketSymbolPageProps) {
           </div>
 
           <div className="text-right">
-            <div className="text-4xl font-display font-semibold text-slate-950 dark:text-white">
-              {formatCompactCurrency(data.price)}
-            </div>
-            <div className={`mt-2 inline-flex items-center gap-2 text-sm font-medium ${positive ? "text-emerald-500" : "text-red-500"}`}>
-              {positive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-              {data.change_percent.toFixed(2)}%
-            </div>
+            {hasLiveData ? (
+              <>
+                <div className="text-4xl font-display font-semibold text-slate-950 dark:text-white">
+                  {formatCompactCurrency(data.price)}
+                </div>
+                <div className={`mt-2 inline-flex items-center gap-2 text-sm font-medium ${positive ? "text-emerald-500" : "text-red-500"}`}>
+                  {positive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                  {data.change_percent.toFixed(2)}%
+                </div>
+              </>
+            ) : (
+              <div className="text-sm font-medium uppercase tracking-[0.25em] text-amber-600 dark:text-amber-300">
+                Live pricing unavailable
+              </div>
+            )}
           </div>
         </div>
+
+        {!hasLiveData ? (
+          <p className="mt-4 text-sm text-amber-700 dark:text-amber-300">
+            This symbol is on the Dubai watchlist, but the current market provider is not returning live pricing for it.
+          </p>
+        ) : null}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
