@@ -13,8 +13,7 @@ RUN apt-get update \
 COPY requirements.txt pyproject.toml alembic.ini ./
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && python -m spacy download en_core_web_sm
+    && pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.11-slim AS runner
 

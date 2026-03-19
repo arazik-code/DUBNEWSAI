@@ -12,8 +12,7 @@ RUN apt-get update \
 
 COPY requirements.txt requirements-dev.txt pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && python -m spacy download en_core_web_sm
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
