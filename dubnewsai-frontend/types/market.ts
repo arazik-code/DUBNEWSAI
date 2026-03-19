@@ -35,6 +35,8 @@ export interface EconomicIndicator {
 export interface MarketOverviewResponse {
   stocks: MarketStock[]
   indices: MarketStock[]
+  global_real_estate: MarketStock[]
+  commodities: MarketStock[]
   currencies: CurrencyRate[]
   economic_indicators: EconomicIndicator[]
   real_estate_companies: MarketStock[]

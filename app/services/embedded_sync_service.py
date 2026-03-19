@@ -8,8 +8,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.market_data import MarketData
 from app.models.news import NewsArticle
-from app.tasks.market_tasks import _update_currency_rates, _update_stock_prices
-from app.tasks.news_tasks import _fetch_newsapi_articles, _fetch_rss_feeds
+from app.tasks.aggregation_tasks import _aggregate_all_news_sources, _aggregate_full_market_data
 
 settings = get_settings()
 
@@ -52,14 +51,9 @@ class EmbeddedSyncService:
     @staticmethod
     async def run_news_sync() -> None:
         try:
-            await _fetch_newsapi_articles()
+            await _aggregate_all_news_sources()
         except Exception as exc:
-            logger.error("Embedded NewsAPI sync failed: {}", str(exc))
-
-        try:
-            await _fetch_rss_feeds()
-        except Exception as exc:
-            logger.error("Embedded RSS sync failed: {}", str(exc))
+            logger.error("Embedded enterprise news sync failed: {}", str(exc))
 
     @staticmethod
     async def run_news_sync_loop() -> None:
@@ -80,14 +74,9 @@ class EmbeddedSyncService:
     @staticmethod
     async def run_market_sync() -> None:
         try:
-            await _update_stock_prices()
+            await _aggregate_full_market_data()
         except Exception as exc:
-            logger.error("Embedded stock sync failed: {}", str(exc))
-
-        try:
-            await _update_currency_rates()
-        except Exception as exc:
-            logger.error("Embedded currency sync failed: {}", str(exc))
+            logger.error("Embedded enterprise market sync failed: {}", str(exc))
 
     @staticmethod
     async def run_market_sync_loop() -> None:

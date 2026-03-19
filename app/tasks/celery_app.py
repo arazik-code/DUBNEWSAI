@@ -9,7 +9,12 @@ celery_app = Celery(
     "dubnewsai",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.news_tasks", "app.tasks.market_tasks", "app.tasks.ai_tasks"],
+    include=[
+        "app.tasks.news_tasks",
+        "app.tasks.market_tasks",
+        "app.tasks.aggregation_tasks",
+        "app.tasks.ai_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -24,25 +29,17 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    "fetch-newsapi-every-15-minutes": {
-        "task": "fetch_newsapi_articles",
+    "aggregate-all-news-every-15-minutes": {
+        "task": "aggregate_all_news_sources",
         "schedule": crontab(minute="*/15"),
-    },
-    "fetch-rss-every-30-minutes": {
-        "task": "fetch_rss_feeds",
-        "schedule": crontab(minute="*/30"),
     },
     "cleanup-old-articles-daily": {
         "task": "cleanup_old_articles",
         "schedule": crontab(hour=2, minute=0),
     },
-    "update-stock-prices-every-5-minutes": {
-        "task": "update_stock_prices",
+    "aggregate-market-every-5-minutes": {
+        "task": "aggregate_full_market_data",
         "schedule": crontab(minute="*/5"),
-    },
-    "update-currency-rates-every-hour": {
-        "task": "update_currency_rates",
-        "schedule": crontab(minute=0),
     },
     "analyze-pending-articles-every-10-minutes": {
         "task": "analyze_pending_articles",

@@ -12,6 +12,7 @@ from dateutil import parser as date_parser
 from loguru import logger
 
 from app.config import get_settings
+from app.core.circuit_breaker import CircuitBreakerOpenError, provider_health
 from app.integrations.alpha_vantage_client import AlphaVantageClient
 from app.integrations.newsapi_client import NewsAPIClient
 from app.models.market_data import MarketType, StockExchange, WatchlistSymbol
@@ -30,6 +31,7 @@ class NormalizedNewsRecord:
     url: str
     source: NewsSource
     source_name: str
+    source_provider: str
     author: str | None
     category: NewsCategory
     published_at: datetime
@@ -53,6 +55,7 @@ class NormalizedMarketQuote:
     change: float
     change_percent: float
     currency: str = "AED"
+    provider: str = "unknown"
 
 
 @dataclass
@@ -61,6 +64,7 @@ class NormalizedCurrencyRate:
     to_currency: str
     rate: float
     timestamp: datetime
+    source: str = "unknown"
 
 
 @dataclass
@@ -224,7 +228,7 @@ class FreeDataAggregator:
         response.raise_for_status()
         return response.json()
 
-    async def _fetch_newsapi(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_newsapi(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.NEWSAPI_KEY:
             return []
         client = NewsAPIClient()
@@ -249,6 +253,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.NEWSAPI,
                     source_name=article.get("source", {}).get("name") or "NewsAPI",
+                    source_provider="newsapi",
                     author=self._clean_text(article.get("author"), 200),
                     category=self._category_from_text(article.get("title", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("publishedAt")),
@@ -257,13 +262,13 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_gnews(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_gnews(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.GNEWS_API_KEY:
             return []
         payload = await self._request_json(
             "https://gnews.io/api/v4/search",
             params={
-                "q": 'Dubai "real estate" OR Dubai property OR Dubai rental',
+                "q": query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
                 "lang": "en",
                 "country": "ae",
                 "max": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
@@ -284,6 +289,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.RAPID_API,
                     source_name="GNews",
+                    source_provider="gnews",
                     author=self._clean_text(article.get("source", {}).get("name") or article.get("author"), 200),
                     category=self._category_from_text(article.get("title", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("publishedAt")),
@@ -292,12 +298,12 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_currents(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_currents(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.CURRENTS_API_KEY:
             return []
         payload = await self._request_json(
             "https://api.currentsapi.services/v1/search",
-            params={"keywords": "Dubai real estate", "language": "en", "apiKey": settings.CURRENTS_API_KEY},
+            params={"keywords": query or "Dubai real estate", "language": "en", "apiKey": settings.CURRENTS_API_KEY},
         )
         records: list[NormalizedNewsRecord] = []
         for article in payload.get("news", [])[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
@@ -312,6 +318,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.RAPID_API,
                     source_name="Currents",
+                    source_provider="currents",
                     author=self._clean_text(article.get("author"), 200),
                     category=self._category_from_text(article.get("title", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("published")),
@@ -320,12 +327,12 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_newsdata(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_newsdata(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.NEWSDATA_API_KEY:
             return []
         payload = await self._request_json(
             "https://newsdata.io/api/1/news",
-            params={"apikey": settings.NEWSDATA_API_KEY, "q": "Dubai real estate OR Dubai property", "language": "en", "country": "ae"},
+            params={"apikey": settings.NEWSDATA_API_KEY, "q": query or "Dubai real estate OR Dubai property", "language": "en", "country": "ae"},
         )
         records: list[NormalizedNewsRecord] = []
         for article in payload.get("results", [])[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
@@ -343,6 +350,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.RAPID_API,
                     source_name="NewsData.io",
+                    source_provider="newsdata",
                     author=self._clean_text(creator, 200),
                     category=self._category_from_text(article.get("title", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("pubDate")),
@@ -351,13 +359,13 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_bing_news(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_bing_news(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.BING_NEWS_API_KEY:
             return []
         payload = await self._request_json(
             "https://api.bing.microsoft.com/v7.0/news/search",
             params={
-                "q": "Dubai real estate OR Dubai property market",
+                "q": query or "Dubai real estate OR Dubai property market",
                 "mkt": "en-AE",
                 "count": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
                 "freshness": "Week",
@@ -379,6 +387,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.RAPID_API,
                     source_name="Bing News",
+                    source_provider="bing_news",
                     author=None,
                     category=self._category_from_text(article.get("name", ""), article.get("description")),
                     published_at=self._parse_datetime(article.get("datePublished")),
@@ -387,7 +396,7 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def _fetch_contextual_web(self) -> list[NormalizedNewsRecord]:
+    async def _fetch_contextual_web(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         rapid_api_key = settings.CONTEXTUAL_WEB_API_KEY or settings.RAPID_API_KEY
         if not rapid_api_key:
             return []
@@ -395,7 +404,7 @@ class FreeDataAggregator:
             (
                 "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI",
                 {
-                    "q": "Dubai real estate",
+                    "q": query or "Dubai real estate",
                     "pageNumber": 1,
                     "pageSize": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
                     "autoCorrect": True,
@@ -411,7 +420,7 @@ class FreeDataAggregator:
             (
                 "https://real-time-web-search.p.rapidapi.com/search-news",
                 {
-                    "query": "Dubai real estate OR Dubai property market",
+                    "query": query or "Dubai real estate OR Dubai property market",
                     "limit": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
                     "time": "w",
                 },
@@ -444,6 +453,7 @@ class FreeDataAggregator:
                         url=url,
                         source=NewsSource.RAPID_API,
                         source_name="RapidAPI News Search",
+                        source_provider="contextual_web",
                         author=self._clean_text(article.get("author"), 200),
                         category=self._category_from_text(article.get("title", ""), article.get("description") or article.get("snippet")),
                         published_at=self._parse_datetime(article.get("datePublished") or article.get("published") or article.get("published_datetime_utc")),
@@ -480,6 +490,7 @@ class FreeDataAggregator:
                         url=url,
                         source=source,
                         source_name=source_name,
+                        source_provider=f"rss_{feed_name}",
                         author=self._clean_text(entry.get("author"), 200),
                         category=self._category_from_text(title, summary),
                         published_at=self._parse_datetime(entry.get("published", entry.get("updated"))),
@@ -524,6 +535,7 @@ class FreeDataAggregator:
                     url=url,
                     source=NewsSource.MANUAL,
                     source_name=insight.source_name,
+                    source_provider=f"scraper_{insight.source_name.lower().replace(' ', '_')}",
                     author=None,
                     category=self._category_from_text(insight.title, insight.excerpt),
                     published_at=insight.published_at,
@@ -532,17 +544,24 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
-    async def fetch_news_articles(self, *, include_api: bool = True, include_rss: bool = True, include_scraped: bool = True) -> list[NewsArticleCreate]:
+    async def fetch_news_articles(
+        self,
+        *,
+        include_api: bool = True,
+        include_rss: bool = True,
+        include_scraped: bool = True,
+        query: str | None = None,
+    ) -> list[NewsArticleCreate]:
         jobs: list[Any] = []
         if include_api:
             jobs.extend(
                 [
-                    self._fetch_newsapi(),
-                    self._fetch_gnews(),
-                    self._fetch_currents(),
-                    self._fetch_newsdata(),
-                    self._fetch_bing_news(),
-                    self._fetch_contextual_web(),
+                    self._fetch_newsapi(query=query),
+                    self._fetch_gnews(query=query),
+                    self._fetch_currents(query=query),
+                    self._fetch_newsdata(query=query),
+                    self._fetch_bing_news(query=query),
+                    self._fetch_contextual_web(query=query),
                 ]
             )
         if include_rss:
@@ -660,6 +679,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=change,
             change_percent=change_percent,
+            provider="yahoo_finance",
         )
 
     async def _fetch_yahoo_quotes(self, watchlist_symbols: list[WatchlistSymbol]) -> list[NormalizedMarketQuote]:
@@ -706,6 +726,7 @@ class FreeDataAggregator:
             change=self._safe_float(payload.get("change")) or 0.0,
             change_percent=self._safe_float(payload.get("percent_change")) or 0.0,
             currency=payload.get("currency", "AED"),
+            provider="twelve_data",
         )
 
     async def _fetch_finnhub_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
@@ -733,6 +754,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=change,
             change_percent=change_percent,
+            provider="finnhub",
         )
 
     async def _fetch_fmp_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
@@ -770,6 +792,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=0.0,
             change_percent=0.0,
+            provider="financial_modeling_prep",
         )
 
     async def _fetch_alpha_vantage_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
@@ -800,16 +823,31 @@ class FreeDataAggregator:
             market_cap=None,
             change=self._safe_float(payload.get("09. change")) or 0.0,
             change_percent=self._safe_float(payload.get("10. change percent")) or 0.0,
+            provider="alpha_vantage",
         )
+
+    @staticmethod
+    def _quote_provider_name(fetcher: Any) -> str:
+        mapping = {
+            "_fetch_twelve_data_quote": "twelve_data",
+            "_fetch_finnhub_quote": "finnhub",
+            "_fetch_fmp_quote": "financial_modeling_prep",
+            "_fetch_alpha_vantage_quote": "alpha_vantage",
+        }
+        return mapping.get(fetcher.__name__, fetcher.__name__)
 
     async def _fetch_fallback_quote_for_symbol(self, watchlist: WatchlistSymbol, aliases: list[str]) -> NormalizedMarketQuote | None:
         fetchers = [self._fetch_twelve_data_quote, self._fetch_finnhub_quote, self._fetch_fmp_quote, self._fetch_alpha_vantage_quote]
         for alias in aliases:
             for fetcher in fetchers:
+                provider_name = self._quote_provider_name(fetcher)
                 try:
-                    quote = await fetcher(watchlist, alias)
+                    quote = await provider_health.call_provider(provider_name, fetcher, watchlist, alias)
+                except CircuitBreakerOpenError:
+                    logger.debug("Quote provider {} skipped for {} because circuit breaker is open", provider_name, alias)
+                    continue
                 except Exception as exc:
-                    logger.debug("Quote provider {} failed for {}: {}", fetcher.__name__, alias, str(exc))
+                    logger.debug("Quote provider {} failed for {}: {}", provider_name, alias, str(exc))
                     continue
                 if quote is not None:
                     return quote
@@ -857,6 +895,7 @@ class FreeDataAggregator:
                     to_currency=to_currency,
                     rate=rate,
                     timestamp=datetime.fromtimestamp(int(timestamp) / 1000, tz=timezone.utc),
+                    source="massive",
                 )
             )
         return rates
@@ -883,6 +922,7 @@ class FreeDataAggregator:
                     to_currency=quote_currency,
                     rate=rate,
                     timestamp=self._parse_datetime(payload.get("time_last_update_utc")),
+                    source="exchangerate_api",
                 )
             )
         return rates
@@ -920,6 +960,7 @@ class FreeDataAggregator:
                         to_currency=quote_currency,
                         rate=rate,
                         timestamp=datetime.now(timezone.utc),
+                        source="currencyapi",
                     )
                 )
         return rates
@@ -954,6 +995,7 @@ class FreeDataAggregator:
                     to_currency=quote_currency,
                     rate=eur_to_quote / eur_to_base,
                     timestamp=self._parse_datetime(payload.get("date")),
+                    source="fixer",
                 )
             )
         return rates
@@ -991,6 +1033,7 @@ class FreeDataAggregator:
                         to_currency=quote_currency,
                         rate=normalized_rate,
                         timestamp=timestamp,
+                        source="frankfurter",
                     )
                 )
 
@@ -1023,6 +1066,7 @@ class FreeDataAggregator:
                         to_currency=to_currency,
                         rate=rate,
                         timestamp=self._parse_datetime(payload.get("6. Last Refreshed")),
+                        source="alpha_vantage",
                     )
                 )
             return fallback_rates

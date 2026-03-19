@@ -335,6 +335,65 @@ class MarketService:
         return [MarketDataResponse.model_validate(company) for company in serialized]
 
     @staticmethod
+    async def get_latest_market_data_for_symbols(
+        db: AsyncSession,
+        symbols: list[str],
+        *,
+        limit: int | None = None,
+        include_watchlist_fallback: bool = False,
+    ) -> list[MarketData] | list[dict]:
+        normalized_symbols = [symbol.upper() for symbol in symbols if symbol]
+        if not normalized_symbols:
+            return []
+
+        cache_key = f"market_latest:symbols:{','.join(normalized_symbols)}:{limit or len(normalized_symbols)}:{int(include_watchlist_fallback)}"
+        cached_market = await cache.get(cache_key)
+        if cached_market is not None:
+            return cached_market
+
+        subquery = (
+            select(
+                MarketData.symbol,
+                func.max(MarketData.data_timestamp).label("max_timestamp"),
+            )
+            .where(MarketData.symbol.in_(normalized_symbols), MarketData.price > 0)
+            .group_by(MarketData.symbol)
+            .subquery()
+        )
+
+        query = select(MarketData).join(
+            subquery,
+            and_(
+                MarketData.symbol == subquery.c.symbol,
+                MarketData.data_timestamp == subquery.c.max_timestamp,
+            ),
+        )
+        result = await db.execute(query)
+        rows = list(result.scalars().all())
+        order_index = {symbol: index for index, symbol in enumerate(normalized_symbols)}
+        rows.sort(key=lambda row: (order_index.get(row.symbol, len(order_index)), -row.data_timestamp.timestamp()))
+
+        serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
+        if include_watchlist_fallback:
+            watchlist_result = await db.execute(
+                select(WatchlistSymbol)
+                .where(WatchlistSymbol.symbol.in_(normalized_symbols), WatchlistSymbol.is_active.is_(True))
+                .order_by(WatchlistSymbol.priority.desc(), WatchlistSymbol.symbol.asc())
+            )
+            existing_symbols = {item["symbol"] for item in serialized}
+            for watchlist in watchlist_result.scalars().all():
+                if watchlist.symbol in existing_symbols:
+                    continue
+                serialized.append(MarketService._watchlist_to_market_snapshot(watchlist))
+                existing_symbols.add(watchlist.symbol)
+
+        if limit is not None:
+            serialized = serialized[:limit]
+
+        await cache.set(cache_key, serialized, ttl=60)
+        return serialized
+
+    @staticmethod
     async def get_latest_currency_rates(db: AsyncSession, limit: int = 10) -> list[CurrencyRate]:
         subquery = (
             select(

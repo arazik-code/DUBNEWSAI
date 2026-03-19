@@ -56,6 +56,33 @@ export function MarketOverview() {
               </div>
             )
           })}
+
+          <div className="pt-4">
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Global Real Estate</p>
+            <div className="mt-3 space-y-3">
+              {data?.global_real_estate.slice(0, 4).map((stock) => {
+                const positive = stock.change >= 0
+                return (
+                  <div
+                    key={stock.symbol}
+                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/5 p-3 dark:bg-white/5"
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-900 dark:text-white">{stock.symbol}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{stock.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium text-slate-900 dark:text-white">{formatCompactCurrency(stock.price)}</div>
+                      <div className={`inline-flex items-center gap-1 text-xs ${positive ? "text-emerald-500" : "text-red-500"}`}>
+                        {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {stock.change_percent.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -104,6 +131,26 @@ export function MarketOverview() {
                   </div>
                   <div className="text-right text-sm font-medium text-slate-900 dark:text-white">
                     {formatCompactNumber(indicator.value)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-slate-950/5 p-4 dark:bg-white/5">
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Commodities</p>
+            <div className="mt-3 space-y-3">
+              {data?.commodities.slice(0, 4).map((commodity) => (
+                <div key={commodity.symbol} className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-900 dark:text-white">{commodity.symbol}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">{commodity.name}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium text-slate-900 dark:text-white">{formatCompactCurrency(commodity.price)}</div>
+                    <div className={`text-xs ${commodity.change >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {commodity.change_percent.toFixed(2)}%
+                    </div>
                   </div>
                 </div>
               ))}

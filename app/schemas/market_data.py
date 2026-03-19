@@ -48,6 +48,8 @@ class EconomicIndicatorResponse(BaseModel):
 class MarketOverview(BaseModel):
     stocks: list[MarketDataResponse]
     indices: list[MarketDataResponse]
+    global_real_estate: list[MarketDataResponse] = []
+    commodities: list[MarketDataResponse] = []
     currencies: list[CurrencyRateResponse]
     economic_indicators: list[EconomicIndicatorResponse]
     real_estate_companies: list[MarketDataResponse]
