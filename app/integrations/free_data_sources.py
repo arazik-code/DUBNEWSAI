@@ -845,6 +845,8 @@ class FreeDataAggregator:
                 continue
 
             result = payload.get("results", {})
+            if isinstance(result, list):
+                result = result[0] if result else {}
             rate = self._safe_float(result.get("c"))
             timestamp = result.get("t")
             if rate is None or rate <= 0 or timestamp is None:
