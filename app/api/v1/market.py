@@ -6,8 +6,8 @@ from app.database import get_db
 from app.dependencies import get_current_user_optional
 from app.models.market_data import MarketType
 from app.models.user import User
-from app.schemas.market_data import EconomicIndicatorResponse, MarketDataResponse, MarketOverview
-from app.services.aggregation.market_aggregator import COMMODITY_SYMBOLS, GLOBAL_REALESTATE_SYMBOLS, UAE_CORE_SYMBOLS
+from app.schemas.market_data import EconomicIndicatorResponse, MarketDataResponse, MarketOverview, WeatherSnapshotResponse
+from app.services.aggregation.market_aggregator import COMMODITY_SYMBOLS, GLOBAL_REALESTATE_SYMBOLS, UAE_CORE_SYMBOLS, market_aggregator
 from app.services.market_service import MarketService
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -35,7 +35,7 @@ async def get_market_overview(
     global_real_estate = await MarketService.get_latest_market_data_for_symbols(
         db,
         [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS],
-        limit=8,
+        limit=16,
     )
     commodities = await MarketService.get_latest_market_data_for_symbols(
         db,
@@ -45,6 +45,7 @@ async def get_market_overview(
     real_estate = await MarketService.get_real_estate_companies(db)
     currencies = await MarketService.get_latest_currency_rates(db, limit=10)
     economic_indicators = await MarketService.get_latest_economic_indicators(db, limit=12)
+    weather = await MarketService.get_market_weather()
     return MarketOverview(
         stocks=[MarketDataResponse.model_validate(item) for item in stocks],
         indices=[MarketDataResponse.model_validate(item) for item in indices],
@@ -53,6 +54,8 @@ async def get_market_overview(
         currencies=currencies,
         economic_indicators=[EconomicIndicatorResponse.model_validate(item) for item in economic_indicators],
         real_estate_companies=[MarketDataResponse.model_validate(item) for item in real_estate],
+        weather=WeatherSnapshotResponse.model_validate(weather) if weather else None,
+        market_status=market_aggregator._get_market_status(),
     )
 
 
@@ -101,6 +104,20 @@ async def get_economic_indicators(
     del request, current_user
     data = await MarketService.get_latest_economic_indicators(db, limit=limit)
     return [EconomicIndicatorResponse.model_validate(item) for item in data]
+
+
+@router.get("/weather", response_model=WeatherSnapshotResponse | None)
+async def get_market_weather(
+    request: Request,
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> WeatherSnapshotResponse | None:
+    """Get current Dubai market weather."""
+    del request, current_user
+    data = await MarketService.get_market_weather()
+    if data is None:
+        return None
+    return WeatherSnapshotResponse.model_validate(data)
 
 
 @router.get("/symbol/{symbol}", response_model=MarketDataResponse)

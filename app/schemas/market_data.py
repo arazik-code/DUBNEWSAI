@@ -16,6 +16,7 @@ class MarketDataResponse(BaseModel):
     change_percent: float
     volume: int
     market_cap: float | None
+    currency: str
     primary_provider: str | None = None
     data_quality_score: float | None = None
     confidence_level: str | None = None
@@ -50,6 +51,20 @@ class EconomicIndicatorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WeatherSnapshotResponse(BaseModel):
+    location_name: str
+    latitude: float
+    longitude: float
+    temperature_c: float
+    apparent_temperature_c: float | None
+    humidity_percent: int | None
+    wind_speed_kph: float | None
+    weather_code: int | None
+    weather_summary: str
+    observed_at: datetime
+    source: str
+
+
 class MarketOverview(BaseModel):
     stocks: list[MarketDataResponse]
     indices: list[MarketDataResponse]
@@ -58,3 +73,5 @@ class MarketOverview(BaseModel):
     currencies: list[CurrencyRateResponse]
     economic_indicators: list[EconomicIndicatorResponse]
     real_estate_companies: list[MarketDataResponse]
+    weather: WeatherSnapshotResponse | None = None
+    market_status: dict[str, str] | None = None

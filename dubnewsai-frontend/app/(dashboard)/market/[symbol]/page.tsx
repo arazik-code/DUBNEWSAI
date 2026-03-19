@@ -49,7 +49,7 @@ export default function MarketSymbolPage({ params }: MarketSymbolPageProps) {
             {hasLiveData ? (
               <>
                 <div className="text-4xl font-display font-semibold text-slate-950 dark:text-white">
-                  {formatCompactCurrency(data.price)}
+                  {formatCompactCurrency(data.price, data.currency || "AED")}
                 </div>
                 <div className={`mt-2 inline-flex items-center gap-2 text-sm font-medium ${positive ? "text-emerald-500" : "text-red-500"}`}>
                   {positive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
@@ -83,7 +83,7 @@ export default function MarketSymbolPage({ params }: MarketSymbolPageProps) {
         <article className="panel p-5">
           <p className="text-sm text-slate-500 dark:text-slate-400">Market Cap</p>
           <p className="mt-3 text-3xl font-display font-semibold text-slate-950 dark:text-white">
-            {data.market_cap ? formatCompactCurrency(data.market_cap) : "N/A"}
+            {data.market_cap ? formatCompactNumber(data.market_cap) : "N/A"}
           </p>
         </article>
         <article className="panel p-5">

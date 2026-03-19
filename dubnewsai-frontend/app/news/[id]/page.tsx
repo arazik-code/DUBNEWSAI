@@ -123,6 +123,11 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
               {titleCase(article.category)}
             </span>
             <SentimentBadge sentiment={article.sentiment} score={article.sentiment_score} />
+            {article.primary_provider ? (
+              <span className="rounded-full bg-cyber-500/10 px-3 py-1 text-xs font-medium text-cyber-500">
+                {titleCase(article.primary_provider)}
+              </span>
+            ) : null}
             <span className="text-xs uppercase tracking-[0.2em] text-slate-500">
               {article.source_name || "DUBNEWSAI"}
             </span>
@@ -138,6 +143,27 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
           {article.description ? (
             <p className="text-lg leading-8 text-slate-700 dark:text-slate-300">{article.description}</p>
           ) : null}
+
+          <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/5 p-4 text-sm text-slate-600 dark:bg-white/5 dark:text-slate-300 md:grid-cols-3">
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Quality</div>
+              <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                {article.quality_score !== undefined ? `${Math.round(article.quality_score)}%` : "N/A"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Source Coverage</div>
+              <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                {article.duplicate_count && article.duplicate_count > 1 ? `${article.duplicate_count} matching sources` : "Single-source match"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Enrichment</div>
+              <div className="mt-1 font-semibold text-slate-950 dark:text-white">
+                {article.enrichment_status ? titleCase(article.enrichment_status) : "Completed"}
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-5 text-base leading-8 text-slate-700 dark:text-slate-300">
             {contentBlocks.length ? (

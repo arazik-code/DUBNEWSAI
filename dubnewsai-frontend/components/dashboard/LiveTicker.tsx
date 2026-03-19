@@ -4,6 +4,7 @@ import { motion } from "framer-motion"
 import { TrendingDown, TrendingUp } from "lucide-react"
 
 import { useMarketData } from "@/lib/hooks/useMarketData"
+import { formatCompactCurrency } from "@/lib/utils/formatters"
 
 export function LiveTicker() {
   const { data: stocks, isLoading } = useMarketData()
@@ -46,7 +47,7 @@ export function LiveTicker() {
 function TickerItem({
   stock
 }: {
-  stock: { symbol: string; price: number; change: number; change_percent: number; is_live_data?: boolean }
+  stock: { symbol: string; price: number; change: number; change_percent: number; currency?: string; is_live_data?: boolean }
 }) {
   if (stock.is_live_data === false) {
     return (
@@ -62,7 +63,7 @@ function TickerItem({
   return (
     <div className="flex shrink-0 items-center gap-3">
       <span className="text-sm font-bold text-white">{stock.symbol}</span>
-      <span className="text-sm text-slate-400">{stock.price.toFixed(2)}</span>
+      <span className="text-sm text-slate-400">{formatCompactCurrency(stock.price, stock.currency || "AED")}</span>
       <div className={`flex items-center gap-1 text-xs font-medium ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
         {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
         {Math.abs(stock.change_percent).toFixed(2)}%

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     GNEWS_API_KEY: str = ""
     CURRENTS_API_KEY: str = ""
     NEWSDATA_API_KEY: str = ""
+    THENEWSAPI_KEY: str = ""
+    MEDIASTACK_API_KEY: str = ""
+    NEWSAPI_AI_KEY: str = ""
     CONTEXTUAL_WEB_API_KEY: str = ""
     BING_NEWS_API_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
@@ -46,7 +49,9 @@ class Settings(BaseSettings):
     RAPID_API_KEY: str = ""
     EXCHANGERATE_API_KEY: str = ""
     CURRENCYAPI_KEY: str = ""
+    CURRENCYFREAKS_API_KEY: str = ""
     FIXER_API_KEY: str = ""
+    OPEN_METEO_API_URL: str = "https://api.open-meteo.com/v1/forecast"
     GOOGLE_PLACES_API_KEY: str = ""
     RESEND_API_KEY: str = ""
     UPSTASH_REDIS_REST_URL: str = ""
@@ -54,7 +59,7 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: str = ""
     TWITTER_BEARER_TOKEN: str = ""
     TRADING_ECONOMICS_API_KEY: str = ""
-    FRANKFURTER_API_URL: str = "https://api.frankfurter.dev/v1/latest"
+    FRANKFURTER_API_URL: str = "https://api.frankfurter.app/latest"
 
     RATE_LIMIT_PER_MINUTE: int = 60
 

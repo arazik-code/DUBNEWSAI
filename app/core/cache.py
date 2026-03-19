@@ -26,6 +26,7 @@ class CacheService:
     MARKET_OVERVIEW = "market:overview"
     MARKET_SYMBOL = "market:symbol:{symbol}"
     MARKET_REAL_ESTATE = "market:real_estate"
+    MARKET_WEATHER = "market:weather"
 
     ANALYTICS_TRENDS = "analytics:trends:{days}"
     ANALYTICS_SENTIMENT = "analytics:sentiment:{category}:{days}"

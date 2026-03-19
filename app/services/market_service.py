@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.metrics import market_updates
 from app.integrations.alpha_vantage_client import AlphaVantageClient
+from app.integrations.free_data_sources import FreeDataAggregator
 from app.schemas.market_data import MarketDataResponse
 from app.models.market_data import CurrencyRate, EconomicIndicator, MarketData, MarketType, StockExchange, WatchlistSymbol
 
@@ -17,6 +18,7 @@ class MarketService:
         await cache.delete_pattern("market_latest:*")
         await cache.delete(cache.MARKET_REAL_ESTATE)
         await cache.delete(cache.MARKET_OVERVIEW)
+        await cache.delete(cache.MARKET_WEATHER)
         if symbol:
             await cache.delete(cache.MARKET_SYMBOL.format(symbol=symbol.upper()))
 
@@ -33,6 +35,7 @@ class MarketService:
             "change_percent": 0.0,
             "volume": 0,
             "market_cap": None,
+            "currency": "AED",
             "data_timestamp": datetime.now(timezone.utc),
             "is_live_data": False,
             "data_source": "watchlist_fallback",
@@ -499,3 +502,37 @@ class MarketService:
         fallback_snapshot = MarketService._watchlist_to_market_snapshot(watchlist)
         await cache.cache_market_symbol(symbol, fallback_snapshot, ttl=60)
         return fallback_snapshot
+
+    @staticmethod
+    async def get_market_weather() -> dict | None:
+        cached_weather = await cache.get(cache.MARKET_WEATHER)
+        if cached_weather is not None:
+            return cached_weather
+
+        aggregator = FreeDataAggregator()
+        try:
+            snapshot = await aggregator.fetch_market_weather(location_name="Dubai")
+        except Exception as exc:
+            logger.warning("Unable to fetch market weather: {}", str(exc))
+            return None
+        finally:
+            await aggregator.close()
+
+        if snapshot is None:
+            return None
+
+        payload = {
+            "location_name": snapshot.location_name,
+            "latitude": snapshot.latitude,
+            "longitude": snapshot.longitude,
+            "temperature_c": snapshot.temperature_c,
+            "apparent_temperature_c": snapshot.apparent_temperature_c,
+            "humidity_percent": snapshot.humidity_percent,
+            "wind_speed_kph": snapshot.wind_speed_kph,
+            "weather_code": snapshot.weather_code,
+            "weather_summary": snapshot.weather_summary,
+            "observed_at": snapshot.observed_at,
+            "source": snapshot.source,
+        }
+        await cache.set(cache.MARKET_WEATHER, payload, ttl=900)
+        return payload

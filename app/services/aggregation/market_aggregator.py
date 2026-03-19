@@ -11,6 +11,7 @@ from app.integrations.free_data_sources import (
     NormalizedCurrencyRate,
     NormalizedEconomicIndicator,
     NormalizedMarketQuote,
+    NormalizedWeatherSnapshot,
 )
 from app.models.market_data import MarketType, StockExchange, WatchlistSymbol
 
@@ -36,6 +37,11 @@ UAE_CORE_SYMBOLS: list[MarketSymbolSpec] = [
     MarketSymbolSpec("ALDAR", "Aldar Properties", MarketType.STOCK, StockExchange.ADX, priority=94, is_real_estate_company=True, segment="uae"),
     MarketSymbolSpec("ESHRAQ", "Eshraq Investments", MarketType.STOCK, StockExchange.ADX, priority=82, is_real_estate_company=True, segment="uae"),
     MarketSymbolSpec("RAKPROP", "RAK Properties", MarketType.STOCK, StockExchange.ADX, priority=80, is_real_estate_company=True, segment="uae"),
+    MarketSymbolSpec("DFM", "Dubai Financial Market", MarketType.STOCK, StockExchange.DFM, priority=76, segment="uae"),
+    MarketSymbolSpec("DIC", "Dubai Investments", MarketType.STOCK, StockExchange.DFM, priority=74, segment="uae"),
+    MarketSymbolSpec("ADCB", "Abu Dhabi Commercial Bank", MarketType.STOCK, StockExchange.ADX, priority=72, segment="uae"),
+    MarketSymbolSpec("FAB", "First Abu Dhabi Bank", MarketType.STOCK, StockExchange.ADX, priority=70, segment="uae"),
+    MarketSymbolSpec("ADNOC", "ADNOC Distribution", MarketType.STOCK, StockExchange.ADX, priority=68, segment="uae"),
 ]
 
 GLOBAL_REALESTATE_SYMBOLS: list[MarketSymbolSpec] = [
@@ -47,6 +53,10 @@ GLOBAL_REALESTATE_SYMBOLS: list[MarketSymbolSpec] = [
     MarketSymbolSpec("LEN", "Lennar", MarketType.STOCK, StockExchange.NYSE, priority=60, segment="global_real_estate"),
     MarketSymbolSpec("DHI", "D.R. Horton", MarketType.STOCK, StockExchange.NYSE, priority=58, segment="global_real_estate"),
     MarketSymbolSpec("NVR", "NVR", MarketType.STOCK, StockExchange.NYSE, priority=56, segment="global_real_estate"),
+    MarketSymbolSpec("AVB", "AvalonBay Communities", MarketType.STOCK, StockExchange.NYSE, priority=54, segment="global_real_estate"),
+    MarketSymbolSpec("EQIX", "Equinix", MarketType.STOCK, StockExchange.NASDAQ, priority=52, segment="global_real_estate"),
+    MarketSymbolSpec("VICI", "VICI Properties", MarketType.STOCK, StockExchange.NYSE, priority=50, segment="global_real_estate"),
+    MarketSymbolSpec("WELL", "Welltower", MarketType.STOCK, StockExchange.NYSE, priority=48, segment="global_real_estate"),
 ]
 
 INDEX_SYMBOLS: list[MarketSymbolSpec] = [
@@ -55,6 +65,8 @@ INDEX_SYMBOLS: list[MarketSymbolSpec] = [
     MarketSymbolSpec("^DJI", "Dow Jones Industrial Average", MarketType.INDEX, None, priority=78, segment="indices"),
     MarketSymbolSpec("^IXIC", "NASDAQ Composite", MarketType.INDEX, None, priority=76, segment="indices"),
     MarketSymbolSpec("^FTSE", "FTSE 100", MarketType.INDEX, None, priority=72, segment="indices"),
+    MarketSymbolSpec("^N225", "Nikkei 225", MarketType.INDEX, None, priority=68, segment="indices"),
+    MarketSymbolSpec("^HSI", "Hang Seng Index", MarketType.INDEX, None, priority=66, segment="indices"),
 ]
 
 COMMODITY_SYMBOLS: list[MarketSymbolSpec] = [
@@ -62,6 +74,8 @@ COMMODITY_SYMBOLS: list[MarketSymbolSpec] = [
     MarketSymbolSpec("SI=F", "Silver Futures", MarketType.COMMODITY, None, priority=68, segment="commodities"),
     MarketSymbolSpec("CL=F", "Crude Oil Futures", MarketType.COMMODITY, None, priority=74, segment="commodities"),
     MarketSymbolSpec("BZ=F", "Brent Oil Futures", MarketType.COMMODITY, None, priority=76, segment="commodities"),
+    MarketSymbolSpec("NG=F", "Natural Gas Futures", MarketType.COMMODITY, None, priority=64, segment="commodities"),
+    MarketSymbolSpec("HG=F", "Copper Futures", MarketType.COMMODITY, None, priority=62, segment="commodities"),
 ]
 
 
@@ -91,6 +105,7 @@ class MarketAggregator:
                 "quotes": aggregator.fetch_market_quotes(all_specs),
                 "currencies": self._fetch_currency_rates(aggregator),
                 "economic_indicators": self._fetch_economic_indicators(aggregator),
+                "weather": self._fetch_market_weather(aggregator),
             }
 
             results = await self._gather(tasks)
@@ -104,6 +119,7 @@ class MarketAggregator:
                 "commodities": segmented_quotes["commodities"],
                 "currencies": results["currencies"],
                 "economic_indicators": results["economic_indicators"],
+                "weather": results["weather"],
                 "provider_stats": provider_stats,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "market_status": self._get_market_status(),
@@ -151,6 +167,13 @@ class MarketAggregator:
                 )
             )
         return indicators
+
+    async def _fetch_market_weather(self, aggregator: FreeDataAggregator) -> NormalizedWeatherSnapshot | None:
+        try:
+            await provider_health.warmup("open_meteo")
+            return await provider_health.call_provider("open_meteo", aggregator.fetch_market_weather)
+        except Exception:
+            return None
 
     @staticmethod
     def _merge_specs(
@@ -218,6 +241,11 @@ class MarketAggregator:
 
         for indicator in results.get("economic_indicators", []):
             provider_key = MarketAggregator._normalize_provider_name(indicator.source)
+            provider_counts[provider_key] = provider_counts.get(provider_key, 0) + 1
+
+        weather = results.get("weather")
+        if weather is not None:
+            provider_key = MarketAggregator._normalize_provider_name(weather.source)
             provider_counts[provider_key] = provider_counts.get(provider_key, 0) + 1
 
         stats: dict[str, dict[str, object]] = {}

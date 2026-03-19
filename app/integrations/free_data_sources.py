@@ -86,6 +86,21 @@ class NormalizedEconomicIndicator:
     description: str | None
 
 
+@dataclass
+class NormalizedWeatherSnapshot:
+    location_name: str
+    latitude: float
+    longitude: float
+    temperature_c: float
+    apparent_temperature_c: float | None
+    humidity_percent: int | None
+    wind_speed_kph: float | None
+    weather_code: int | None
+    weather_summary: str
+    observed_at: datetime
+    source: str = "open_meteo"
+
+
 class FreeDataAggregator:
     RSS_FEEDS: dict[str, tuple[str, NewsSource, str]] = {
         "propertyfinder_blog": ("https://www.propertyfinder.ae/blog/feed/", NewsSource.MANUAL, "Property Finder Blog"),
@@ -110,6 +125,11 @@ class FreeDataAggregator:
         "UPP": ["UPP.DU", "UPP:DFM", "UNIONPRO.AE", "UPP.AE"],
         "ESHRAQ": ["ESHRAQ.AD", "ESHRAQ:ADX", "ESHRAQ.AE"],
         "RAKPROP": ["RAKPROP.AE", "RAKPROP:ADX", "RAKPROP.AD"],
+        "DFM": ["DFM.DU", "DFM:DFM"],
+        "DIC": ["DIC.DU", "DIC:DFM"],
+        "ADCB": ["ADCB.AD", "ADCB:ADX"],
+        "FAB": ["FAB.AD", "FAB:ADX"],
+        "ADNOC": ["ADNOCDIST.AD", "ADNOC.AD", "ADNOCDIST:ADX"],
         "^DFM": ["DFMGI.AE", "^DFMGI"],
     }
 
@@ -142,6 +162,30 @@ class FreeDataAggregator:
         "property_price_index": {"url": "https://www.dubaipulse.gov.ae/data/reidin-property-price/", "description": "Dubai property price index dataset landing page"},
         "building_permits": {"url": "https://www.dubaipulse.gov.ae/data/dm-building-permits/", "description": "Dubai Municipality building permits dataset landing page"},
         "tourism_stats": {"url": "https://www.dubaipulse.gov.ae/data/dtcm-tourism/", "description": "Tourism statistics impacting rental demand"},
+    }
+
+    OPEN_METEO_LOCATIONS: dict[str, tuple[float, float]] = {
+        "Dubai": (25.2048, 55.2708),
+        "Abu Dhabi": (24.4539, 54.3773),
+        "Riyadh": (24.7136, 46.6753),
+    }
+
+    WEATHER_CODE_SUMMARIES: dict[int, str] = {
+        0: "Clear",
+        1: "Mostly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Light rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        71: "Light snow",
+        80: "Rain showers",
+        95: "Thunderstorm",
     }
 
     LOCATION_TERMS = ("dubai", "uae", "abu dhabi", "emirates", "dfm", "adx")
@@ -265,13 +309,28 @@ class FreeDataAggregator:
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
+    @staticmethod
+    def _default_news_query(query: str | None = None) -> str:
+        return query or "Dubai real estate"
+
+    @staticmethod
+    def _news_query_variants(query: str | None = None) -> list[str]:
+        if query:
+            return [query]
+        return [
+            "Dubai real estate",
+            "Dubai property",
+            "UAE property market",
+            "Emaar Aldar Damac",
+        ]
+
     async def _fetch_newsapi(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.NEWSAPI_KEY:
             return []
         client = NewsAPIClient()
         try:
             articles = await client.search_news(
-                query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
+                self._default_news_query(query),
                 max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
                 max_results=min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
             )
@@ -290,7 +349,7 @@ class FreeDataAggregator:
         client = GNewsClient()
         try:
             articles = await client.search_news(
-                query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
+                self._default_news_query(query),
                 max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
                 max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
             )
@@ -309,7 +368,7 @@ class FreeDataAggregator:
         client = CurrentsClient()
         try:
             articles = await client.search_news(
-                query or "Dubai real estate",
+                self._default_news_query(query),
                 max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
                 max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
             )
@@ -328,7 +387,7 @@ class FreeDataAggregator:
         client = NewsDataClient()
         try:
             articles = await client.search_news(
-                query or "Dubai real estate OR Dubai property",
+                self._default_news_query(query),
                 max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
             )
         finally:
@@ -340,13 +399,161 @@ class FreeDataAggregator:
             fallback_source_name="NewsData.io",
         )
 
+    async def _fetch_thenewsapi(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.THENEWSAPI_KEY:
+            return []
+        records: list[NormalizedNewsRecord] = []
+        for candidate_query in self._news_query_variants(query):
+            try:
+                payload = await self._request_json(
+                    "https://api.thenewsapi.com/v1/news/all",
+                    params={
+                        "api_token": settings.THENEWSAPI_KEY,
+                        "search": candidate_query,
+                        "search_fields": "title,description,keywords",
+                        "language": "en",
+                        "limit": min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
+                        "sort": "published_at",
+                    },
+                )
+            except Exception as exc:
+                logger.debug("TheNewsAPI fetch failed for query {}: {}", candidate_query, str(exc))
+                continue
+            for article in payload.get("data", [])[: min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2)]:
+                url = self._normalize_url(article.get("url"))
+                if not url:
+                    continue
+                description = self._clean_text(article.get("description"), 5000)
+                title = self._clean_text(article.get("title"), 500) or "Untitled"
+                records.append(
+                    NormalizedNewsRecord(
+                        title=title,
+                        description=description,
+                        content=self._clean_text(article.get("snippet"), 50000) or description,
+                        url=url,
+                        source=NewsSource.RAPID_API,
+                        source_name=self._clean_text(article.get("source"), 200) or "TheNewsAPI",
+                        source_provider="thenewsapi",
+                        author=self._clean_text(article.get("author"), 200),
+                        category=self._category_from_text(title, description),
+                        published_at=self._parse_datetime(article.get("published_at")),
+                        image_url=self._normalize_url(article.get("image_url")),
+                    )
+                )
+            if records:
+                break
+        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+
+    async def _fetch_mediastack(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.MEDIASTACK_API_KEY:
+            return []
+        records: list[NormalizedNewsRecord] = []
+        for candidate_query in self._news_query_variants(query):
+            try:
+                payload = await self._request_json(
+                    "http://api.mediastack.com/v1/news",
+                    params={
+                        "access_key": settings.MEDIASTACK_API_KEY,
+                        "keywords": candidate_query,
+                        "languages": "en",
+                        "countries": "ae",
+                        "sort": "published_desc",
+                        "limit": min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Mediastack fetch failed for query {}: {}", candidate_query, str(exc))
+                continue
+            for article in payload.get("data", [])[: min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2)]:
+                url = self._normalize_url(article.get("url"))
+                if not url:
+                    continue
+                description = self._clean_text(article.get("description"), 5000)
+                title = self._clean_text(article.get("title"), 500) or "Untitled"
+                records.append(
+                    NormalizedNewsRecord(
+                        title=title,
+                        description=description,
+                        content=description,
+                        url=url,
+                        source=NewsSource.RAPID_API,
+                        source_name=self._clean_text(article.get("source"), 200) or "Mediastack",
+                        source_provider="mediastack",
+                        author=self._clean_text(article.get("author"), 200),
+                        category=self._category_from_text(title, description),
+                        published_at=self._parse_datetime(article.get("published_at")),
+                        image_url=self._normalize_url(article.get("image")),
+                    )
+                )
+            if records:
+                break
+        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+
+    async def _fetch_newsapi_ai(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.NEWSAPI_AI_KEY:
+            return []
+        records: list[NormalizedNewsRecord] = []
+        for candidate_query in self._news_query_variants(query):
+            try:
+                response = await self.client.post(
+                    "https://eventregistry.org/api/v1/article/getArticles",
+                    json={
+                        "apiKey": settings.NEWSAPI_AI_KEY,
+                        "resultType": "articles",
+                        "articlesSortBy": "date",
+                        "articlesCount": min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
+                        "query": {
+                            "$query": {
+                                "lang": "eng",
+                                "keyword": candidate_query,
+                            },
+                            "$filter": {
+                                "forceMaxDataTimeWindow": str(max(settings.NEWS_LOOKBACK_DAYS, 31)),
+                            },
+                        },
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except Exception as exc:
+                logger.debug("NewsAPI.ai fetch failed for query {}: {}", candidate_query, str(exc))
+                continue
+            for article in payload.get("articles", {}).get("results", [])[: min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2)]:
+                url = self._normalize_url(article.get("url"))
+                if not url:
+                    continue
+                title = self._clean_text(article.get("title"), 500) or "Untitled"
+                description = self._clean_text(article.get("body"), 5000)
+                source_title = None
+                source = article.get("source")
+                if isinstance(source, dict):
+                    source_title = source.get("title")
+                records.append(
+                    NormalizedNewsRecord(
+                        title=title,
+                        description=description,
+                        content=self._clean_text(article.get("body"), 50000),
+                        url=url,
+                        source=NewsSource.RAPID_API,
+                        source_name=self._clean_text(source_title, 200) or "NewsAPI.ai",
+                        source_provider="newsapi_ai",
+                        author=self._clean_text(", ".join(author.get("name", "") for author in article.get("authors", []) if author.get("name")), 200),
+                        category=self._category_from_text(title, description),
+                        published_at=self._parse_datetime(article.get("dateTimePub") or article.get("dateTime")),
+                        image_url=self._normalize_url(article.get("image")),
+                    )
+                )
+            if records:
+                break
+        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+
     async def _fetch_bing_news(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.BING_NEWS_API_KEY:
             return []
         client = BingNewsClient()
         try:
             articles = await client.search_news(
-                query or "Dubai real estate OR Dubai property market",
+                self._default_news_query(query),
                 max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
                 max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
             )
@@ -367,7 +574,7 @@ class FreeDataAggregator:
             (
                 "https://contextualwebsearch-websearch-v1.p.rapidapi.com/api/search/NewsSearchAPI",
                 {
-                    "q": query or "Dubai real estate",
+                    "q": self._default_news_query(query),
                     "pageNumber": 1,
                     "pageSize": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
                     "autoCorrect": True,
@@ -383,7 +590,7 @@ class FreeDataAggregator:
             (
                 "https://real-time-web-search.p.rapidapi.com/search-news",
                 {
-                    "query": query or "Dubai real estate OR Dubai property market",
+                    "query": self._default_news_query(query),
                     "limit": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
                     "time": "w",
                 },
@@ -524,6 +731,9 @@ class FreeDataAggregator:
                     self._fetch_gnews(query=query),
                     self._fetch_currents(query=query),
                     self._fetch_newsdata(query=query),
+                    self._fetch_thenewsapi(query=query),
+                    self._fetch_mediastack(query=query),
+                    self._fetch_newsapi_ai(query=query),
                     self._fetch_bing_news(query=query),
                     self._fetch_contextual_web(query=query),
                 ]
@@ -790,6 +1000,40 @@ class FreeDataAggregator:
             provider="alpha_vantage",
         )
 
+    async def _fetch_marketstack_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
+        if not settings.MARKETSTACK_API_KEY:
+            return None
+        payload = await self._request_json(
+            "https://api.marketstack.com/v1/eod/latest",
+            params={"access_key": settings.MARKETSTACK_API_KEY, "symbols": alias},
+        )
+        data = payload.get("data", [])
+        if not data:
+            return None
+        quote_data = data[0]
+        price = self._safe_float(quote_data.get("close"))
+        if price is None or price <= 0:
+            return None
+        open_price = self._safe_float(quote_data.get("open"))
+        previous_close = self._safe_float(quote_data.get("close"))
+        return NormalizedMarketQuote(
+            symbol=watchlist.symbol.upper(),
+            alias_used=alias,
+            name=watchlist.name,
+            market_type=watchlist.market_type,
+            exchange=watchlist.exchange,
+            price=price,
+            open_price=open_price,
+            high_price=self._safe_float(quote_data.get("high")),
+            low_price=self._safe_float(quote_data.get("low")),
+            previous_close=previous_close,
+            volume=self._safe_int(quote_data.get("volume")),
+            market_cap=None,
+            change=0.0,
+            change_percent=0.0,
+            provider="marketstack",
+        )
+
     @staticmethod
     def _quote_provider_name(fetcher: Any) -> str:
         mapping = {
@@ -797,11 +1041,18 @@ class FreeDataAggregator:
             "_fetch_finnhub_quote": "finnhub",
             "_fetch_fmp_quote": "financial_modeling_prep",
             "_fetch_alpha_vantage_quote": "alpha_vantage",
+            "_fetch_marketstack_quote": "marketstack",
         }
         return mapping.get(fetcher.__name__, fetcher.__name__)
 
     async def _fetch_fallback_quote_for_symbol(self, watchlist: WatchlistSymbol, aliases: list[str]) -> NormalizedMarketQuote | None:
-        fetchers = [self._fetch_twelve_data_quote, self._fetch_finnhub_quote, self._fetch_fmp_quote, self._fetch_alpha_vantage_quote]
+        fetchers = [
+            self._fetch_twelve_data_quote,
+            self._fetch_finnhub_quote,
+            self._fetch_fmp_quote,
+            self._fetch_alpha_vantage_quote,
+            self._fetch_marketstack_quote,
+        ]
         for alias in aliases:
             for fetcher in fetchers:
                 provider_name = self._quote_provider_name(fetcher)
@@ -964,6 +1215,44 @@ class FreeDataAggregator:
             )
         return rates
 
+    async def _fetch_currencyfreaks_rates(self) -> list[NormalizedCurrencyRate]:
+        if not settings.CURRENCYFREAKS_API_KEY:
+            return []
+
+        pairs_by_base: dict[str, set[str]] = {}
+        for base_currency, quote_currency in self.CURRENCY_PAIRS:
+            pairs_by_base.setdefault(base_currency, set()).add(quote_currency)
+
+        rates: list[NormalizedCurrencyRate] = []
+        for base_currency, quote_currencies in pairs_by_base.items():
+            try:
+                payload = await self._request_json(
+                    "https://api.currencyfreaks.com/v2.0/rates/latest",
+                    params={
+                        "apikey": settings.CURRENCYFREAKS_API_KEY,
+                        "base": base_currency,
+                        "symbols": ",".join(sorted(quote_currencies)),
+                    },
+                )
+            except Exception as exc:
+                logger.debug("CurrencyFreaks fetch failed for {}: {}", base_currency, str(exc))
+                continue
+
+            for quote_currency, quote_value in payload.get("rates", {}).items():
+                rate = self._safe_float(quote_value)
+                if rate is None:
+                    continue
+                rates.append(
+                    NormalizedCurrencyRate(
+                        from_currency=base_currency,
+                        to_currency=quote_currency,
+                        rate=rate,
+                        timestamp=datetime.now(timezone.utc),
+                        source="currencyfreaks",
+                    )
+                )
+        return rates
+
     async def fetch_currency_rates(self) -> list[NormalizedCurrencyRate]:
         massive_rates = await self._fetch_massive_forex_rates()
         if massive_rates:
@@ -1007,6 +1296,7 @@ class FreeDataAggregator:
         for fallback_fetcher in (
             self._fetch_exchange_rate_api_rates,
             self._fetch_currencyapi_rates,
+            self._fetch_currencyfreaks_rates,
             self._fetch_fixer_rates,
         ):
             fallback_rates = await fallback_fetcher()
@@ -1036,6 +1326,40 @@ class FreeDataAggregator:
             return fallback_rates
         finally:
             await client.close()
+
+    async def fetch_market_weather(
+        self,
+        *,
+        location_name: str = "Dubai",
+    ) -> NormalizedWeatherSnapshot | None:
+        coordinates = self.OPEN_METEO_LOCATIONS.get(location_name, self.OPEN_METEO_LOCATIONS["Dubai"])
+        payload = await self._request_json(
+            settings.OPEN_METEO_API_URL,
+            params={
+                "latitude": coordinates[0],
+                "longitude": coordinates[1],
+                "current": "temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code",
+                "timezone": "Asia/Dubai",
+            },
+        )
+        current = payload.get("current", {})
+        temperature = self._safe_float(current.get("temperature_2m"))
+        if temperature is None:
+            return None
+
+        weather_code = self._safe_int(current.get("weather_code")) if current.get("weather_code") is not None else None
+        return NormalizedWeatherSnapshot(
+            location_name=location_name,
+            latitude=float(payload.get("latitude", coordinates[0])),
+            longitude=float(payload.get("longitude", coordinates[1])),
+            temperature_c=temperature,
+            apparent_temperature_c=self._safe_float(current.get("apparent_temperature")),
+            humidity_percent=self._safe_int(current.get("relative_humidity_2m")) if current.get("relative_humidity_2m") is not None else None,
+            wind_speed_kph=self._safe_float(current.get("wind_speed_10m")),
+            weather_code=weather_code,
+            weather_summary=self.WEATHER_CODE_SUMMARIES.get(weather_code or -1, "Current conditions"),
+            observed_at=self._parse_datetime(current.get("time")),
+        )
 
     async def fetch_world_bank_indicators(self, country: str = "ARE") -> list[NormalizedEconomicIndicator]:
         indicators: list[NormalizedEconomicIndicator] = []

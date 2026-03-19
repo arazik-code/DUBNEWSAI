@@ -143,6 +143,45 @@ class ProviderRegistry:
         )
         self.register(
             ProviderConfig(
+                name="thenewsapi",
+                type=ProviderType.NEWS,
+                priority=ProviderPriority.HIGH,
+                rate_limit=500,
+                cost_per_call=0.0,
+                reliability_score=81.0,
+                enabled=bool(settings.THENEWSAPI_KEY),
+                api_key=settings.THENEWSAPI_KEY,
+                base_url="https://api.thenewsapi.com/v1/news",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="mediastack",
+                type=ProviderType.NEWS,
+                priority=ProviderPriority.MEDIUM,
+                rate_limit=500,
+                cost_per_call=0.0,
+                reliability_score=74.0,
+                enabled=bool(settings.MEDIASTACK_API_KEY),
+                api_key=settings.MEDIASTACK_API_KEY,
+                base_url="http://api.mediastack.com/v1/news",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="newsapi_ai",
+                type=ProviderType.NEWS,
+                priority=ProviderPriority.MEDIUM,
+                rate_limit=500,
+                cost_per_call=0.0,
+                reliability_score=78.0,
+                enabled=bool(settings.NEWSAPI_AI_KEY),
+                api_key=settings.NEWSAPI_AI_KEY,
+                base_url="https://eventregistry.org/api/v1/article/getArticles",
+            )
+        )
+        self.register(
+            ProviderConfig(
                 name="bing_news",
                 type=ProviderType.NEWS,
                 priority=ProviderPriority.MEDIUM,
@@ -283,6 +322,58 @@ class ProviderRegistry:
         )
         self.register(
             ProviderConfig(
+                name="exchange_rate_api",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.MEDIUM,
+                rate_limit=1500,
+                cost_per_call=0.0,
+                reliability_score=80.0,
+                enabled=bool(settings.EXCHANGERATE_API_KEY),
+                api_key=settings.EXCHANGERATE_API_KEY,
+                base_url="https://v6.exchangerate-api.com/v6",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="currencyapi",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.MEDIUM,
+                rate_limit=300,
+                cost_per_call=0.0,
+                reliability_score=74.0,
+                enabled=bool(settings.CURRENCYAPI_KEY),
+                api_key=settings.CURRENCYAPI_KEY,
+                base_url="https://api.currencyapi.com/v3/latest",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="currencyfreaks",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.LOW,
+                rate_limit=1000,
+                cost_per_call=0.0,
+                reliability_score=65.0,
+                enabled=bool(settings.CURRENCYFREAKS_API_KEY),
+                api_key=settings.CURRENCYFREAKS_API_KEY,
+                base_url="https://api.currencyfreaks.com/v2.0/rates/latest",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="fixer",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.LOW,
+                rate_limit=100,
+                cost_per_call=0.0,
+                reliability_score=72.0,
+                enabled=bool(settings.FIXER_API_KEY),
+                api_key=settings.FIXER_API_KEY,
+                base_url="https://data.fixer.io/api/latest",
+            )
+        )
+        self.register(
+            ProviderConfig(
                 name="marketstack",
                 type=ProviderType.MARKET,
                 priority=ProviderPriority.LOW,
@@ -386,6 +477,18 @@ class ProviderRegistry:
                 reliability_score=86.0,
                 enabled=True,
                 base_url="https://www.dubaipulse.gov.ae",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="open_meteo",
+                type=ProviderType.DATASET,
+                priority=ProviderPriority.HIGH,
+                rate_limit=999999,
+                cost_per_call=0.0,
+                reliability_score=94.0,
+                enabled=True,
+                base_url=settings.OPEN_METEO_API_URL,
             )
         )
 

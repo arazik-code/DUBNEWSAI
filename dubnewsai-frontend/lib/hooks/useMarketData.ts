@@ -3,9 +3,9 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { apiClient } from "@/lib/api/client"
-import type { EconomicIndicator, MarketOverviewResponse, MarketStock } from "@/types"
+import type { EconomicIndicator, MarketOverviewResponse, MarketStock, WeatherSnapshot } from "@/types"
 
-export function useMarketData(limit = 12) {
+export function useMarketData(limit = 24) {
   return useQuery<MarketStock[]>({
     queryKey: ["market", "stocks", limit],
     queryFn: async () => {
@@ -43,6 +43,16 @@ export function useEconomicIndicators(limit = 12) {
       const { data } = await apiClient.get<EconomicIndicator[]>("/market/economic-indicators", {
         params: { limit }
       })
+      return data
+    }
+  })
+}
+
+export function useMarketWeather() {
+  return useQuery<WeatherSnapshot | null>({
+    queryKey: ["market", "weather"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<WeatherSnapshot | null>("/market/weather")
       return data
     }
   })

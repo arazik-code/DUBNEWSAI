@@ -32,7 +32,7 @@ class NewsAggregationResult:
 
 
 class NewsAggregator:
-    DEFAULT_QUERY = "Dubai real estate OR Dubai property OR UAE housing OR Emaar OR Damac OR Aldar OR rental market"
+    DEFAULT_QUERY = "Dubai real estate"
 
     def __init__(self) -> None:
         self.registry = provider_registry
@@ -102,6 +102,9 @@ class NewsAggregator:
             "gnews": lambda: aggregator._fetch_gnews(query=query),
             "currents": lambda: aggregator._fetch_currents(query=query),
             "newsdata": lambda: aggregator._fetch_newsdata(query=query),
+            "thenewsapi": lambda: aggregator._fetch_thenewsapi(query=query),
+            "mediastack": lambda: aggregator._fetch_mediastack(query=query),
+            "newsapi_ai": lambda: aggregator._fetch_newsapi_ai(query=query),
             "bing_news": lambda: aggregator._fetch_bing_news(query=query),
             "contextual_web": lambda: aggregator._fetch_contextual_web(query=query),
             "rss_feeds": aggregator._fetch_rss,
