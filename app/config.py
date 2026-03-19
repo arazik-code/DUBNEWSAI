@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +20,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # Keep this as a plain string in env vars so platforms like Railway can pass
+    # either a single URL or a comma-separated list without JSON encoding.
+    CORS_ORIGINS: str = "http://localhost:3000"
 
     NEWSAPI_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
@@ -54,13 +55,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: object) -> object:
-        if isinstance(value, str):
-            origins = [item.strip() for item in value.split(",") if item.strip()]
-            return origins or ["http://localhost:3000"]
-        return value
+    @property
+    def cors_origins_list(self) -> list[str]:
+        origins = [item.strip() for item in self.CORS_ORIGINS.split(",") if item.strip()]
+        return origins or ["http://localhost:3000"]
 
 
 @lru_cache
