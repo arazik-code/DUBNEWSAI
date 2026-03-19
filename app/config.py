@@ -1,4 +1,5 @@
 from functools import lru_cache
+import re
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,9 +71,21 @@ class Settings(BaseSettings):
                 return value.replace("postgres://", "postgresql+asyncpg://", 1)
         return value
 
+    @staticmethod
+    def _normalize_origin(origin: str) -> str:
+        return origin.strip().strip("\"'").rstrip("/")
+
     @property
     def cors_origins_list(self) -> list[str]:
-        origins = [item.strip() for item in self.CORS_ORIGINS.split(",") if item.strip()]
+        raw_origins = re.split(r"[\s,]+", self.CORS_ORIGINS.strip())
+        origins: list[str] = []
+        for item in raw_origins:
+            normalized = self._normalize_origin(item)
+            if normalized and normalized not in origins:
+                origins.append(normalized)
+        frontend_origin = self._normalize_origin(self.FRONTEND_URL)
+        if frontend_origin and frontend_origin not in origins:
+            origins.append(frontend_origin)
         return origins or ["http://localhost:3000"]
 
 
