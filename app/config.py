@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_database_url(cls, value: object) -> object:
         if isinstance(value, str):
+            if "pooler.supabase.com:6543/" in value:
+                value = value.replace("pooler.supabase.com:6543/", "pooler.supabase.com:5432/", 1)
             if value.startswith("postgresql+asyncpg://") or value.startswith("sqlite+aiosqlite://"):
                 return value
             if value.startswith("postgresql://"):
