@@ -13,6 +13,13 @@ branch_labels = None
 depends_on = None
 
 
+user_role_enum = sa.Enum(
+    UserRole,
+    name="user_role",
+    values_callable=lambda enum_cls: [item.value for item in enum_cls],
+)
+
+
 def upgrade() -> None:
     op.create_table(
         "users",
@@ -20,7 +27,7 @@ def upgrade() -> None:
         sa.Column("full_name", sa.String(length=255), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("role", sa.Enum(UserRole, name="user_role"), nullable=False, server_default="user"),
+        sa.Column("role", user_role_enum, nullable=False, server_default="user"),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -105,4 +112,3 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_users_id"), table_name="users")
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_table("users")
-
