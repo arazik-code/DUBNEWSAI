@@ -14,7 +14,14 @@ from loguru import logger
 from app.config import get_settings
 from app.core.circuit_breaker import CircuitBreakerOpenError, provider_health
 from app.integrations.alpha_vantage_client import AlphaVantageClient
-from app.integrations.newsapi_client import NewsAPIClient
+from app.integrations.news_clients import (
+    BingNewsClient,
+    CurrentsClient,
+    GNewsClient,
+    NewsAPIClient,
+    NewsDataClient,
+    RSSFeedParser,
+)
 from app.models.market_data import MarketType, StockExchange, WatchlistSymbol
 from app.models.news import NewsCategory, NewsSource
 from app.schemas.news import NewsArticleCreate
@@ -228,18 +235,14 @@ class FreeDataAggregator:
         response.raise_for_status()
         return response.json()
 
-    async def _fetch_newsapi(self, query: str | None = None) -> list[NormalizedNewsRecord]:
-        if not settings.NEWSAPI_KEY:
-            return []
-        client = NewsAPIClient()
-        try:
-            articles = await client.fetch_dubai_real_estate_news(
-                days_back=settings.NEWS_LOOKBACK_DAYS,
-                page_size=min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
-            )
-        finally:
-            await client.close()
-
+    def _records_from_client_articles(
+        self,
+        articles: list[dict[str, Any]],
+        *,
+        source: NewsSource,
+        source_provider: str,
+        fallback_source_name: str,
+    ) -> list[NormalizedNewsRecord]:
         records: list[NormalizedNewsRecord] = []
         for article in articles[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
             url = self._normalize_url(article.get("url"))
@@ -251,150 +254,110 @@ class FreeDataAggregator:
                     description=self._clean_text(article.get("description"), 5000),
                     content=self._clean_text(article.get("content"), 50000),
                     url=url,
-                    source=NewsSource.NEWSAPI,
-                    source_name=article.get("source", {}).get("name") or "NewsAPI",
-                    source_provider="newsapi",
+                    source=source,
+                    source_name=self._clean_text(article.get("source"), 200) or fallback_source_name,
+                    source_provider=source_provider,
                     author=self._clean_text(article.get("author"), 200),
                     category=self._category_from_text(article.get("title", ""), article.get("description")),
-                    published_at=self._parse_datetime(article.get("publishedAt")),
-                    image_url=self._normalize_url(article.get("urlToImage")),
-                )
-            )
-        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
-
-    async def _fetch_gnews(self, query: str | None = None) -> list[NormalizedNewsRecord]:
-        if not settings.GNEWS_API_KEY:
-            return []
-        payload = await self._request_json(
-            "https://gnews.io/api/v4/search",
-            params={
-                "q": query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
-                "lang": "en",
-                "country": "ae",
-                "max": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
-                "from": (datetime.now(timezone.utc) - timedelta(days=settings.NEWS_LOOKBACK_DAYS)).date().isoformat(),
-                "token": settings.GNEWS_API_KEY,
-            },
-        )
-        records: list[NormalizedNewsRecord] = []
-        for article in payload.get("articles", []):
-            url = self._normalize_url(article.get("url"))
-            if not url:
-                continue
-            records.append(
-                NormalizedNewsRecord(
-                    title=self._clean_text(article.get("title"), 500) or "Untitled",
-                    description=self._clean_text(article.get("description"), 5000),
-                    content=self._clean_text(article.get("content"), 50000),
-                    url=url,
-                    source=NewsSource.RAPID_API,
-                    source_name="GNews",
-                    source_provider="gnews",
-                    author=self._clean_text(article.get("source", {}).get("name") or article.get("author"), 200),
-                    category=self._category_from_text(article.get("title", ""), article.get("description")),
-                    published_at=self._parse_datetime(article.get("publishedAt")),
-                    image_url=self._normalize_url(article.get("image")),
-                )
-            )
-        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
-
-    async def _fetch_currents(self, query: str | None = None) -> list[NormalizedNewsRecord]:
-        if not settings.CURRENTS_API_KEY:
-            return []
-        payload = await self._request_json(
-            "https://api.currentsapi.services/v1/search",
-            params={"keywords": query or "Dubai real estate", "language": "en", "apiKey": settings.CURRENTS_API_KEY},
-        )
-        records: list[NormalizedNewsRecord] = []
-        for article in payload.get("news", [])[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
-            url = self._normalize_url(article.get("url"))
-            if not url:
-                continue
-            records.append(
-                NormalizedNewsRecord(
-                    title=self._clean_text(article.get("title"), 500) or "Untitled",
-                    description=self._clean_text(article.get("description"), 5000),
-                    content=self._clean_text(article.get("description"), 50000),
-                    url=url,
-                    source=NewsSource.RAPID_API,
-                    source_name="Currents",
-                    source_provider="currents",
-                    author=self._clean_text(article.get("author"), 200),
-                    category=self._category_from_text(article.get("title", ""), article.get("description")),
-                    published_at=self._parse_datetime(article.get("published")),
-                    image_url=self._normalize_url(article.get("image")),
-                )
-            )
-        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
-
-    async def _fetch_newsdata(self, query: str | None = None) -> list[NormalizedNewsRecord]:
-        if not settings.NEWSDATA_API_KEY:
-            return []
-        payload = await self._request_json(
-            "https://newsdata.io/api/1/news",
-            params={"apikey": settings.NEWSDATA_API_KEY, "q": query or "Dubai real estate OR Dubai property", "language": "en", "country": "ae"},
-        )
-        records: list[NormalizedNewsRecord] = []
-        for article in payload.get("results", [])[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
-            url = self._normalize_url(article.get("link"))
-            if not url:
-                continue
-            creator = article.get("creator")
-            if isinstance(creator, list):
-                creator = creator[0] if creator else None
-            records.append(
-                NormalizedNewsRecord(
-                    title=self._clean_text(article.get("title"), 500) or "Untitled",
-                    description=self._clean_text(article.get("description"), 5000),
-                    content=self._clean_text(article.get("content"), 50000),
-                    url=url,
-                    source=NewsSource.RAPID_API,
-                    source_name="NewsData.io",
-                    source_provider="newsdata",
-                    author=self._clean_text(creator, 200),
-                    category=self._category_from_text(article.get("title", ""), article.get("description")),
-                    published_at=self._parse_datetime(article.get("pubDate")),
+                    published_at=self._parse_datetime(article.get("published_at")),
                     image_url=self._normalize_url(article.get("image_url")),
                 )
             )
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
+    async def _fetch_newsapi(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.NEWSAPI_KEY:
+            return []
+        client = NewsAPIClient()
+        try:
+            articles = await client.search_news(
+                query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
+                max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
+                max_results=min(25, settings.NEWS_PROVIDER_ARTICLE_LIMIT * 2),
+            )
+        finally:
+            await client.close()
+        return self._records_from_client_articles(
+            articles,
+            source=NewsSource.NEWSAPI,
+            source_provider="newsapi",
+            fallback_source_name="NewsAPI",
+        )
+
+    async def _fetch_gnews(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.GNEWS_API_KEY:
+            return []
+        client = GNewsClient()
+        try:
+            articles = await client.search_news(
+                query or 'Dubai "real estate" OR Dubai property OR Dubai rental',
+                max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
+                max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+            )
+        finally:
+            await client.close()
+        return self._records_from_client_articles(
+            articles,
+            source=NewsSource.RAPID_API,
+            source_provider="gnews",
+            fallback_source_name="GNews",
+        )
+
+    async def _fetch_currents(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.CURRENTS_API_KEY:
+            return []
+        client = CurrentsClient()
+        try:
+            articles = await client.search_news(
+                query or "Dubai real estate",
+                max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
+                max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+            )
+        finally:
+            await client.close()
+        return self._records_from_client_articles(
+            articles,
+            source=NewsSource.RAPID_API,
+            source_provider="currents",
+            fallback_source_name="Currents",
+        )
+
+    async def _fetch_newsdata(self, query: str | None = None) -> list[NormalizedNewsRecord]:
+        if not settings.NEWSDATA_API_KEY:
+            return []
+        client = NewsDataClient()
+        try:
+            articles = await client.search_news(
+                query or "Dubai real estate OR Dubai property",
+                max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+            )
+        finally:
+            await client.close()
+        return self._records_from_client_articles(
+            articles,
+            source=NewsSource.RAPID_API,
+            source_provider="newsdata",
+            fallback_source_name="NewsData.io",
+        )
+
     async def _fetch_bing_news(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         if not settings.BING_NEWS_API_KEY:
             return []
-        payload = await self._request_json(
-            "https://api.bing.microsoft.com/v7.0/news/search",
-            params={
-                "q": query or "Dubai real estate OR Dubai property market",
-                "mkt": "en-AE",
-                "count": settings.NEWS_PROVIDER_ARTICLE_LIMIT,
-                "freshness": "Week",
-            },
-            headers={"Ocp-Apim-Subscription-Key": settings.BING_NEWS_API_KEY},
-        )
-        records: list[NormalizedNewsRecord] = []
-        for article in payload.get("value", []):
-            url = self._normalize_url(article.get("url"))
-            if not url:
-                continue
-            image = article.get("image", {})
-            thumbnail = image.get("thumbnail") if isinstance(image, dict) else None
-            records.append(
-                NormalizedNewsRecord(
-                    title=self._clean_text(article.get("name"), 500) or "Untitled",
-                    description=self._clean_text(article.get("description"), 5000),
-                    content=self._clean_text(article.get("description"), 50000),
-                    url=url,
-                    source=NewsSource.RAPID_API,
-                    source_name="Bing News",
-                    source_provider="bing_news",
-                    author=None,
-                    category=self._category_from_text(article.get("name", ""), article.get("description")),
-                    published_at=self._parse_datetime(article.get("datePublished")),
-                    image_url=self._normalize_url(thumbnail.get("contentUrl")) if isinstance(thumbnail, dict) else None,
-                )
+        client = BingNewsClient()
+        try:
+            articles = await client.search_news(
+                query or "Dubai real estate OR Dubai property market",
+                max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
+                max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
             )
-        return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
+        finally:
+            await client.close()
+        return self._records_from_client_articles(
+            articles,
+            source=NewsSource.RAPID_API,
+            source_provider="bing_news",
+            fallback_source_name="Bing News",
+        )
 
     async def _fetch_contextual_web(self, query: str | None = None) -> list[NormalizedNewsRecord]:
         rapid_api_key = settings.CONTEXTUAL_WEB_API_KEY or settings.RAPID_API_KEY
@@ -467,40 +430,41 @@ class FreeDataAggregator:
         return []
 
     async def _fetch_single_rss_feed(self, feed_name: str, feed_url: str, source: NewsSource, source_name: str) -> list[NormalizedNewsRecord]:
+        parser = RSSFeedParser()
         try:
-            response = await self.client.get(feed_url)
-            response.raise_for_status()
-            feed = feedparser.parse(response.text)
+            entries = await parser.parse_feed(
+                feed_url,
+                max_age_hours=settings.NEWS_LOOKBACK_DAYS * 24,
+                max_results=settings.NEWS_PROVIDER_ARTICLE_LIMIT,
+            )
             records: list[NormalizedNewsRecord] = []
-            for entry in feed.entries[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:
-                url = self._normalize_url(entry.get("link"))
+            for entry in entries:
+                url = self._normalize_url(entry.get("url"))
                 if not url:
                     continue
-                summary = self._clean_text(entry.get("summary", entry.get("description")), 5000)
+                summary = self._clean_text(entry.get("description"), 5000)
                 title = self._clean_text(entry.get("title"), 500) or "Untitled"
-                image_url = None
-                media_content = entry.get("media_content")
-                if media_content:
-                    image_url = self._normalize_url(media_content[0].get("url"))
                 records.append(
                     NormalizedNewsRecord(
                         title=title,
                         description=summary,
-                        content=summary,
+                        content=self._clean_text(entry.get("content"), 50000) or summary,
                         url=url,
                         source=source,
                         source_name=source_name,
                         source_provider=f"rss_{feed_name}",
                         author=self._clean_text(entry.get("author"), 200),
                         category=self._category_from_text(title, summary),
-                        published_at=self._parse_datetime(entry.get("published", entry.get("updated"))),
-                        image_url=image_url,
+                        published_at=self._parse_datetime(entry.get("published_at")),
+                        image_url=self._normalize_url(entry.get("image_url")),
                     )
                 )
             return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
         except Exception as exc:
             logger.warning("RSS source {} unavailable: {}", feed_name, str(exc))
             return []
+        finally:
+            await parser.close()
 
     async def _fetch_rss(self) -> list[NormalizedNewsRecord]:
         tasks = [

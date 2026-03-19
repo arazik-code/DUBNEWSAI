@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     Boolean,
@@ -16,10 +16,14 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    Float,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel, enum_kwargs
+
+if TYPE_CHECKING:
+    from app.models.sources import ArticleSource
 
 
 class NewsCategory(str, Enum):
@@ -99,17 +103,26 @@ class NewsArticle(BaseModel):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    primary_provider: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    quality_score: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
     view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     relevance_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    enrichment_status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     tags: Mapped[list["NewsTag"]] = relationship(
         secondary=news_article_tags,
         back_populates="articles",
+    )
+    sources: Mapped[list["ArticleSource"]] = relationship(
+        back_populates="article",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (

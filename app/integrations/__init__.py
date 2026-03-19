@@ -1,7 +1,23 @@
 """External service clients."""
 
 from app.integrations.alpha_vantage_client import AlphaVantageClient
-from app.integrations.newsapi_client import NewsAPIClient
-from app.integrations.rss_parser import RSSFeedParser
+from app.integrations.news_clients import (
+    BingNewsClient,
+    ClientFactory,
+    CurrentsClient,
+    GNewsClient,
+    NewsAPIClient,
+    NewsDataClient,
+    RSSFeedParser,
+)
 
-__all__ = ["AlphaVantageClient", "NewsAPIClient", "RSSFeedParser"]
+__all__ = [
+    "AlphaVantageClient",
+    "BingNewsClient",
+    "ClientFactory",
+    "CurrentsClient",
+    "GNewsClient",
+    "NewsAPIClient",
+    "NewsDataClient",
+    "RSSFeedParser",
+]

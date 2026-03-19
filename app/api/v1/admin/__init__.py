@@ -2,13 +2,15 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.admin.providers import router as providers_router
 from app.database import get_db
 from app.dependencies import get_current_admin
 from app.models.news import NewsArticle
-from app.tasks.news_tasks import fetch_newsapi_articles, fetch_rss_feeds
 from app.models.user import User
+from app.tasks.news_tasks import fetch_newsapi_articles, fetch_rss_feeds
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+router.include_router(providers_router)
 
 
 @router.get("/stats")

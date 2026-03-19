@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.market_data import WatchlistSymbol
+from app.models.news import NewsArticle
 from app.schemas.market_data import MarketDataResponse
 from app.schemas.news import NewsArticleResponse
 from app.services.alert_service import AlertService
@@ -16,6 +17,7 @@ from app.services.aggregation.news_aggregator import news_aggregator
 from app.services.broadcast_service import BroadcastService
 from app.services.market_service import MarketService
 from app.services.news_service import NewsService
+from app.services.provider_observability_service import ProviderObservabilityService
 
 
 @shared_task(name="aggregate_all_news_sources")
@@ -32,14 +34,45 @@ async def _aggregate_all_news_sources() -> dict[str, object]:
     result = await news_aggregator.aggregate_news()
 
     async with AsyncSessionLocal() as db:
+        await ProviderObservabilityService.record_provider_stats(
+            db,
+            result.provider_stats,
+            query=result.query,
+            fetch_type="news_aggregation",
+            triggered_by="celery_task",
+        )
+        await db.commit()
         created_ranked: list[tuple[float, object]] = []
         skipped = 0
 
         for item in result.items:
             created_article = await NewsService.create_article(db, item.article)
             if created_article is None:
+                existing_result = await db.execute(
+                    select(NewsArticle).where(NewsArticle.url_hash == item.url_hash)
+                )
+                existing_article = existing_result.scalar_one_or_none()
+                if existing_article is not None:
+                    await ProviderObservabilityService.attach_article_sources(
+                        db,
+                        article=existing_article,
+                        provider_names=item.source_providers,
+                        primary_provider=existing_article.primary_provider or (item.source_providers[0] if item.source_providers else None),
+                        duplicate_count=max(existing_article.duplicate_count, item.duplicate_count),
+                        quality_score=max(existing_article.quality_score, item.quality_score),
+                    )
+                    await db.commit()
                 skipped += 1
                 continue
+            await ProviderObservabilityService.attach_article_sources(
+                db,
+                article=created_article,
+                provider_names=item.source_providers,
+                primary_provider=item.source_providers[0] if item.source_providers else None,
+                duplicate_count=item.duplicate_count,
+                quality_score=item.quality_score,
+            )
+            await db.commit()
             created_ranked.append((item.quality_score, created_article))
 
         for _, article in sorted(created_ranked, key=lambda pair: pair[0], reverse=True)[:5]:
@@ -82,10 +115,19 @@ async def _aggregate_full_market_data() -> dict[str, object]:
         watchlist_symbols = result.scalars().all()
 
         market_result = await market_aggregator.aggregate_full_market_data(watchlist_symbols=watchlist_symbols)
+        await ProviderObservabilityService.record_provider_stats(
+            db,
+            market_result["provider_stats"],
+            query=None,
+            fetch_type="market_aggregation",
+            triggered_by="celery_task",
+        )
+        await db.commit()
 
         saved_quotes = 0
         for collection_name in ("uae_stocks", "global_real_estate", "indices", "commodities"):
             for quote in market_result[collection_name]:
+                region = "UAE" if collection_name == "uae_stocks" else "International" if collection_name == "global_real_estate" else "Global"
                 market_data = await MarketService.store_market_snapshot(
                     db,
                     symbol=quote.symbol,
@@ -102,7 +144,21 @@ async def _aggregate_full_market_data() -> dict[str, object]:
                     change=quote.change,
                     change_percent=quote.change_percent,
                     currency=quote.currency,
+                    primary_provider=quote.provider,
+                    data_quality_score=100.0 if quote.price > 0 else 0.0,
+                    confidence_level="high" if quote.price > 0 else "low",
+                    asset_class=quote.market_type.value,
+                    region=region,
                 )
+                await ProviderObservabilityService.attach_market_sources(
+                    db,
+                    market_data=market_data,
+                    provider_names=[quote.provider],
+                    primary_provider=quote.provider,
+                    confidence_score=95.0 if quote.price > 0 else 20.0,
+                    data_completeness=100.0 if quote.price > 0 else 0.0,
+                )
+                await db.commit()
                 saved_quotes += 1
                 await AlertService.check_price_alerts(db, quote.symbol, quote.price)
                 payload = MarketDataResponse.model_validate(market_data).model_dump(mode="json")

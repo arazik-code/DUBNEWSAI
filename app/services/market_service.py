@@ -154,6 +154,11 @@ class MarketService:
         change: float,
         change_percent: float,
         currency: str = "AED",
+        primary_provider: str | None = None,
+        data_quality_score: float | None = None,
+        confidence_level: str | None = None,
+        asset_class: str | None = None,
+        region: str | None = None,
     ) -> MarketData:
         market_data = MarketData(
             symbol=symbol.upper(),
@@ -171,6 +176,11 @@ class MarketService:
             change=change,
             change_percent=change_percent,
             currency=currency,
+            primary_provider=primary_provider,
+            data_quality_score=data_quality_score,
+            confidence_level=confidence_level,
+            asset_class=asset_class or market_type.value,
+            region=region,
             data_timestamp=datetime.now(timezone.utc),
         )
         db.add(market_data)

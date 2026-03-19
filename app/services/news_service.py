@@ -180,6 +180,7 @@ class NewsService:
             relevance_score=0,
             image_url=str(article_data.image_url) if article_data.image_url else None,
             video_url=str(article_data.video_url) if article_data.video_url else None,
+            enrichment_status="pending" if NewsService._content_needs_enrichment(article_data.content, article_data.description) else "completed",
             tags=[],
         )
 
@@ -246,12 +247,16 @@ class NewsService:
         if not updated:
             return article
 
+        article.enrichment_status = "processing"
+
         analysis = await AIService.analyze_article(article)
         article.sentiment = NewsSentiment(analysis["sentiment"])
         article.sentiment_score = analysis["sentiment_score"]
         article.keywords = analysis["keywords"] or None
         article.entities = analysis["entities"] or None
         article.relevance_score = analysis["relevance_score"]
+        article.enrichment_status = "completed"
+        article.enriched_at = datetime.now(timezone.utc)
 
         await db.commit()
         await db.refresh(article)

@@ -1,4 +1,6 @@
+from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -75,3 +77,39 @@ class BaseAPIClient:
         headers: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         return await self._request("POST", endpoint, headers=headers, json_data=json_data)
+
+
+class BaseNewsClient(BaseAPIClient, ABC):
+    """Abstract base class for search-oriented news providers."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str | None = None,
+        default_headers: Mapping[str, str] | None = None,
+        timeout: int = 30,
+        use_bearer_auth: bool = False,
+    ) -> None:
+        super().__init__(
+            base_url=base_url,
+            api_key=api_key,
+            default_headers=default_headers,
+            timeout=timeout,
+            use_bearer_auth=use_bearer_auth,
+        )
+
+    def _get_date_range(self, max_age_hours: int) -> tuple[datetime, datetime]:
+        now = datetime.now(timezone.utc)
+        from_date = now - timedelta(hours=max_age_hours)
+        return from_date, now
+
+    @abstractmethod
+    async def search_news(
+        self,
+        query: str,
+        *,
+        max_age_hours: int = 24,
+        max_results: int = 10,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError

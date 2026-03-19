@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, Float, Index, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel, enum_kwargs
+
+if TYPE_CHECKING:
+    from app.models.sources import MarketDataSource
 
 
 class MarketType(str, Enum):
@@ -50,6 +54,11 @@ class MarketData(BaseModel):
     change_percent: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     currency: Mapped[str] = mapped_column(String(3), default="AED", nullable=False)
+    primary_provider: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    data_quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    asset_class: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(50), nullable=True)
     data_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -61,6 +70,10 @@ class MarketData(BaseModel):
     dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
     week_52_high: Mapped[float | None] = mapped_column(Float, nullable=True)
     week_52_low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sources: Mapped[list["MarketDataSource"]] = relationship(
+        back_populates="market_data",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("idx_symbol_timestamp", "symbol", "data_timestamp"),

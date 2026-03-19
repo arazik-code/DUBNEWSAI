@@ -45,6 +45,32 @@ class ProviderHealthMonitor:
         self._evaluate_state(provider_name, state)
         return state
 
+    def get_health_report(self) -> dict[str, dict[str, Any]]:
+        report: dict[str, dict[str, Any]] = {}
+        for provider_name in sorted(self._states):
+            state = self.snapshot(provider_name)
+            report[provider_name] = {
+                "health_score": state.reliability,
+                "circuit_state": state.state,
+                "last_error": state.last_error,
+                "last_success_at": state.last_success_at.isoformat() if state.last_success_at else None,
+                "last_failure_at": state.last_failure_at.isoformat() if state.last_failure_at else None,
+            }
+        return report
+
+    def reset(self, provider_name: str) -> ProviderHealthState:
+        state = self._state(provider_name)
+        state.failures = 0
+        state.successes = 0
+        state.consecutive_failures = 0
+        state.last_failure_at = None
+        state.last_success_at = None
+        state.last_error = None
+        state.state = "closed"
+        state.opened_at = None
+        state.metadata.clear()
+        return state
+
     def is_open(self, provider_name: str) -> bool:
         state = self._state(provider_name)
         self._evaluate_state(provider_name, state)

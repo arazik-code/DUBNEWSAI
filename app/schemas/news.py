@@ -34,12 +34,17 @@ class NewsArticleResponse(BaseModel):
     keywords: list[str] | None
     entities: dict[str, list[str]] | None
     published_at: datetime
+    primary_provider: str | None = None
+    duplicate_count: int = 1
+    quality_score: float = 50.0
     image_url: str | None
     video_url: str | None
     view_count: int
     relevance_score: int
     is_featured: bool
     is_published: bool
+    enrichment_status: str | None = None
+    enriched_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

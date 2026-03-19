@@ -1,12 +1,13 @@
 "use client"
 
-import { BarChart3, BellRing, Building2, LayoutDashboard, LineChart, Newspaper, Settings } from "lucide-react"
+import { BarChart3, BellRing, Building2, LayoutDashboard, LineChart, Newspaper, Settings, Shield } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 import { cn } from "@/lib/utils/cn"
+import { useAuthStore } from "@/lib/store/authStore"
 
-const items = [
+const baseItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/news", label: "News Feed", icon: Newspaper },
   { href: "/market", label: "Market", icon: LineChart },
@@ -17,6 +18,10 @@ const items = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const user = useAuthStore((state) => state.user)
+  const items = user?.role === "admin"
+    ? [...baseItems, { href: "/admin/providers", label: "Providers", icon: Shield }]
+    : baseItems
 
   return (
     <aside className="fixed left-0 top-20 hidden h-[calc(100vh-5rem)] w-64 border-r border-white/10 bg-transparent lg:block">

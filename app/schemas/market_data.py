@@ -16,6 +16,11 @@ class MarketDataResponse(BaseModel):
     change_percent: float
     volume: int
     market_cap: float | None
+    primary_provider: str | None = None
+    data_quality_score: float | None = None
+    confidence_level: str | None = None
+    asset_class: str | None = None
+    region: str | None = None
     data_timestamp: datetime
     is_live_data: bool = True
     data_source: str = "market_data"
