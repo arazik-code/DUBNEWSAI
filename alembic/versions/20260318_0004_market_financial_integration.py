@@ -16,6 +16,10 @@ def upgrade() -> None:
     market_type_enum = sa.Enum("stock", "index", "currency", "commodity", "crypto", name="market_type")
     stock_exchange_enum = sa.Enum("dfm", "adx", "nasdaq", "nyse", name="stock_exchange")
 
+    if connection.dialect.name == "postgresql":
+        market_type_enum.create(connection, checkfirst=True)
+        stock_exchange_enum.create(connection, checkfirst=True)
+
     op.drop_index(op.f("ix_market_data_metric_name"), table_name="market_data")
     op.drop_index(op.f("ix_market_data_id"), table_name="market_data")
     op.drop_index(op.f("ix_market_data_area_name"), table_name="market_data")
@@ -186,3 +190,8 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_market_data_symbol"), table_name="market_data")
     op.drop_index(op.f("ix_market_data_id"), table_name="market_data")
     op.drop_table("market_data")
+
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        sa.Enum("dfm", "adx", "nasdaq", "nyse", name="stock_exchange").drop(bind, checkfirst=True)
+        sa.Enum("stock", "index", "currency", "commodity", "crypto", name="market_type").drop(bind, checkfirst=True)

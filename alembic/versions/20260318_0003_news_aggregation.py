@@ -32,6 +32,33 @@ def _deserialize_tags(raw_value) -> list[str]:
 
 def upgrade() -> None:
     connection = op.get_bind()
+    news_source_enum = sa.Enum(
+        "newsapi",
+        "rss_gulf_news",
+        "rss_the_national",
+        "rss_khaleej_times",
+        "rss_arabian_business",
+        "rapid_api",
+        "twitter",
+        "manual",
+        name="news_source",
+    )
+    news_category_enum = sa.Enum(
+        "real_estate",
+        "market",
+        "economy",
+        "regulation",
+        "development",
+        "infrastructure",
+        "general",
+        name="news_category",
+    )
+    news_sentiment_enum = sa.Enum("positive", "neutral", "negative", name="news_sentiment")
+
+    if connection.dialect.name == "postgresql":
+        news_source_enum.create(connection, checkfirst=True)
+        news_category_enum.create(connection, checkfirst=True)
+        news_sentiment_enum.create(connection, checkfirst=True)
 
     op.drop_index(op.f("ix_news_articles_slug"), table_name="news_articles")
     op.drop_index(op.f("ix_news_articles_id"), table_name="news_articles")
@@ -58,30 +85,11 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=True),
         sa.Column("url", sa.String(length=1000), nullable=False),
         sa.Column("url_hash", sa.String(length=64), nullable=False),
-        sa.Column("source", sa.Enum(
-            "newsapi",
-            "rss_gulf_news",
-            "rss_the_national",
-            "rss_khaleej_times",
-            "rss_arabian_business",
-            "rapid_api",
-            "twitter",
-            "manual",
-            name="news_source",
-        ), nullable=False),
+        sa.Column("source", news_source_enum, nullable=False),
         sa.Column("source_name", sa.String(length=200), nullable=True),
         sa.Column("author", sa.String(length=200), nullable=True),
-        sa.Column("category", sa.Enum(
-            "real_estate",
-            "market",
-            "economy",
-            "regulation",
-            "development",
-            "infrastructure",
-            "general",
-            name="news_category",
-        ), nullable=False, server_default="general"),
-        sa.Column("sentiment", sa.Enum("positive", "neutral", "negative", name="news_sentiment"), nullable=False, server_default="neutral"),
+        sa.Column("category", news_category_enum, nullable=False, server_default="general"),
+        sa.Column("sentiment", news_sentiment_enum, nullable=False, server_default="neutral"),
         sa.Column("sentiment_score", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("keywords", sa.JSON(), nullable=True),
         sa.Column("entities", sa.JSON(), nullable=True),
@@ -268,3 +276,28 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_news_articles_title"), table_name="news_articles")
     op.drop_index(op.f("ix_news_articles_id"), table_name="news_articles")
     op.drop_table("news_articles")
+
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        sa.Enum("positive", "neutral", "negative", name="news_sentiment").drop(bind, checkfirst=True)
+        sa.Enum(
+            "real_estate",
+            "market",
+            "economy",
+            "regulation",
+            "development",
+            "infrastructure",
+            "general",
+            name="news_category",
+        ).drop(bind, checkfirst=True)
+        sa.Enum(
+            "newsapi",
+            "rss_gulf_news",
+            "rss_the_national",
+            "rss_khaleej_times",
+            "rss_arabian_business",
+            "rapid_api",
+            "twitter",
+            "manual",
+            name="news_source",
+        ).drop(bind, checkfirst=True)
