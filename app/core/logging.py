@@ -6,6 +6,7 @@ from loguru import logger as loguru_logger
 from app.config import get_settings
 
 settings = get_settings()
+loguru_logger.configure(extra={"request_id": "-"})
 logger = loguru_logger.patch(lambda record: record["extra"].setdefault("request_id", "-"))
 
 
@@ -25,6 +26,7 @@ class InterceptHandler(logging.Handler):
 
 
 def setup_logging() -> None:
+    loguru_logger.configure(extra={"request_id": "-"})
     logging.root.handlers = [InterceptHandler()]
     logging.root.setLevel(settings.LOG_LEVEL)
 
