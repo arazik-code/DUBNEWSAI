@@ -8,10 +8,18 @@ from app.core.cache import cache
 from app.core.metrics import market_updates
 from app.integrations.alpha_vantage_client import AlphaVantageClient
 from app.schemas.market_data import MarketDataResponse
-from app.models.market_data import CurrencyRate, MarketData, MarketType, WatchlistSymbol
+from app.models.market_data import CurrencyRate, EconomicIndicator, MarketData, MarketType, StockExchange, WatchlistSymbol
 
 
 class MarketService:
+    @staticmethod
+    async def _invalidate_market_cache(symbol: str | None = None) -> None:
+        await cache.delete_pattern("market_latest:*")
+        await cache.delete(cache.MARKET_REAL_ESTATE)
+        await cache.delete(cache.MARKET_OVERVIEW)
+        if symbol:
+            await cache.delete(cache.MARKET_SYMBOL.format(symbol=symbol.upper()))
+
     @staticmethod
     def _watchlist_to_market_snapshot(watchlist: WatchlistSymbol) -> dict:
         return {
@@ -89,10 +97,7 @@ class MarketService:
             db.add(market_data)
             await db.commit()
             await db.refresh(market_data)
-            await cache.delete_pattern("market_latest:*")
-            await cache.delete(cache.MARKET_SYMBOL.format(symbol=symbol.upper()))
-            await cache.delete(cache.MARKET_REAL_ESTATE)
-            await cache.delete(cache.MARKET_OVERVIEW)
+            await MarketService._invalidate_market_cache(symbol)
             market_updates.inc()
             logger.info("Updated market quote for {}", symbol)
             return market_data
@@ -126,6 +131,99 @@ class MarketService:
         except Exception as exc:
             logger.error("Error updating currency rate {}/{}: {}", from_currency, to_currency, str(exc))
             return None
+
+    @staticmethod
+    async def store_market_snapshot(
+        db: AsyncSession,
+        *,
+        symbol: str,
+        name: str,
+        market_type: MarketType,
+        exchange: StockExchange | None,
+        price: float,
+        open_price: float | None,
+        high_price: float | None,
+        low_price: float | None,
+        previous_close: float | None,
+        volume: int,
+        market_cap: float | None,
+        change: float,
+        change_percent: float,
+        currency: str = "AED",
+    ) -> MarketData:
+        market_data = MarketData(
+            symbol=symbol.upper(),
+            name=name,
+            market_type=market_type,
+            exchange=exchange,
+            price=price,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=price,
+            previous_close=previous_close,
+            volume=volume,
+            market_cap=market_cap,
+            change=change,
+            change_percent=change_percent,
+            currency=currency,
+            data_timestamp=datetime.now(timezone.utc),
+        )
+        db.add(market_data)
+        await db.commit()
+        await db.refresh(market_data)
+        await MarketService._invalidate_market_cache(symbol)
+        market_updates.inc()
+        return market_data
+
+    @staticmethod
+    async def store_currency_rate_snapshot(
+        db: AsyncSession,
+        *,
+        from_currency: str,
+        to_currency: str,
+        rate: float,
+        timestamp: datetime,
+    ) -> CurrencyRate:
+        currency_rate = CurrencyRate(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            rate=rate,
+            timestamp=timestamp,
+        )
+        db.add(currency_rate)
+        await db.commit()
+        await db.refresh(currency_rate)
+        await cache.delete(cache.MARKET_OVERVIEW)
+        return currency_rate
+
+    @staticmethod
+    async def store_economic_indicator(
+        db: AsyncSession,
+        *,
+        indicator_name: str,
+        indicator_code: str,
+        value: float,
+        unit: str | None,
+        period: str | None,
+        timestamp: datetime,
+        source: str,
+        description: str | None,
+    ) -> EconomicIndicator:
+        indicator = EconomicIndicator(
+            indicator_name=indicator_name,
+            indicator_code=indicator_code,
+            value=value,
+            unit=unit,
+            period=period,
+            timestamp=timestamp,
+            source=source,
+            description=description,
+        )
+        db.add(indicator)
+        await db.commit()
+        await db.refresh(indicator)
+        return indicator
 
     @staticmethod
     async def get_latest_market_data(

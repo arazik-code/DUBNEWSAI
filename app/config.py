@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     ENABLE_EMBEDDED_SYNC: bool | None = None
     EMBEDDED_NEWS_SYNC_MINUTES: int = 30
+    EMBEDDED_MARKET_SYNC_MINUTES: int = 60
 
     DATABASE_URL: str
     DB_ECHO: bool = False
@@ -29,12 +30,22 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
 
     NEWSAPI_KEY: str = ""
+    GNEWS_API_KEY: str = ""
+    CURRENTS_API_KEY: str = ""
+    NEWSDATA_API_KEY: str = ""
+    CONTEXTUAL_WEB_API_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
+    TWELVE_DATA_API_KEY: str = ""
+    FINNHUB_API_KEY: str = ""
+    FMP_API_KEY: str = ""
     OPENWEATHER_KEY: str = ""
     RAPID_API_KEY: str = ""
     RESEND_API_KEY: str = ""
     UPSTASH_REDIS_REST_URL: str = ""
     UPSTASH_REDIS_REST_TOKEN: str = ""
+    YOUTUBE_API_KEY: str = ""
+    TWITTER_BEARER_TOKEN: str = ""
+    TRADING_ECONOMICS_API_KEY: str = ""
 
     RATE_LIMIT_PER_MINUTE: int = 60
 
@@ -52,6 +63,8 @@ class Settings(BaseSettings):
 
     SENTRY_DSN: str = ""
     LOG_LEVEL: str = "INFO"
+    NEWS_LOOKBACK_DAYS: int = 7
+    NEWS_PROVIDER_ARTICLE_LIMIT: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",
