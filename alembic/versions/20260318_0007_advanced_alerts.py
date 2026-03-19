@@ -28,6 +28,10 @@ alert_status_enum = sa.Enum("active", "triggered", "expired", "paused", name="al
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        alert_type_enum.create(bind, checkfirst=True)
+        alert_frequency_enum.create(bind, checkfirst=True)
+        alert_status_enum.create(bind, checkfirst=True)
 
     with op.batch_alter_table("alerts") as batch_op:
         batch_op.add_column(sa.Column("name", sa.String(length=200), nullable=True))
@@ -189,3 +193,9 @@ def downgrade() -> None:
         batch_op.drop_column("keywords")
         batch_op.drop_column("status")
         batch_op.drop_column("name")
+
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        alert_status_enum.drop(bind, checkfirst=True)
+        alert_frequency_enum.drop(bind, checkfirst=True)
+        alert_type_enum.drop(bind, checkfirst=True)
