@@ -312,11 +312,11 @@ class FreeDataAggregator:
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
     async def _fetch_newsdata(self) -> list[NormalizedNewsRecord]:
-        if not settings.NEWDATA_API_KEY:
+        if not settings.NEWSDATA_API_KEY:
             return []
         payload = await self._request_json(
             "https://newsdata.io/api/1/news",
-            params={"apikey": settings.NEWDATA_API_KEY, "q": "Dubai real estate OR Dubai property", "language": "en", "country": "ae"},
+            params={"apikey": settings.NEWSDATA_API_KEY, "q": "Dubai real estate OR Dubai property", "language": "en", "country": "ae"},
         )
         records: list[NormalizedNewsRecord] = []
         for article in payload.get("results", [])[: settings.NEWS_PROVIDER_ARTICLE_LIMIT]:

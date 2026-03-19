@@ -81,7 +81,11 @@ async def _update_currency_rates() -> None:
         try:
             rates = await aggregator.fetch_currency_rates()
             indicators = await aggregator.fetch_world_bank_indicators()
-            trading_economics = await aggregator.fetch_trading_economics_indicators()
+            try:
+                trading_economics = await aggregator.fetch_trading_economics_indicators()
+            except Exception as exc:
+                logger.warning("Trading Economics fetch failed: {}", str(exc))
+                trading_economics = []
 
             for rate in rates:
                 await MarketService.store_currency_rate_snapshot(

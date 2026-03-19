@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from loguru import logger
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -131,7 +132,11 @@ class NewsService:
         article_url = str(article_data.url)
         url_hash = NewsService.generate_url_hash(article_url)
 
-        existing_result = await db.execute(select(NewsArticle).where(NewsArticle.url_hash == url_hash))
+        existing_result = await db.execute(
+            select(NewsArticle).where(
+                or_(NewsArticle.url_hash == url_hash, NewsArticle.url == article_url)
+            )
+        )
         existing = existing_result.scalar_one_or_none()
         if existing is not None:
             logger.debug("Skipping duplicate article for {}", article_url)
@@ -172,7 +177,12 @@ class NewsService:
         db.add(article)
         await db.flush()
         await NewsService._attach_tags(db, article, article.keywords or [])
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            logger.debug("Skipping duplicate article for {}", article_url)
+            return None
         await db.refresh(article)
         await NewsService.invalidate_article_cache(article.id)
         articles_processed.inc()
