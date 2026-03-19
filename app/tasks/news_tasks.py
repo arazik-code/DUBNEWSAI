@@ -23,7 +23,7 @@ async def _fetch_newsapi_articles() -> None:
     client = NewsAPIClient()
     async with AsyncSessionLocal() as db:
         try:
-            raw_articles = await client.fetch_dubai_real_estate_news(days_back=1)
+            raw_articles = await client.fetch_dubai_real_estate_news(days_back=7, page_size=25)
             articles_to_create: list[NewsArticleCreate] = []
 
             for raw_article in raw_articles:
