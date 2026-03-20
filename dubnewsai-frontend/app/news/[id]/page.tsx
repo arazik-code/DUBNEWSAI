@@ -38,6 +38,45 @@ async function getArticle(id: string): Promise<NewsArticle | null> {
   }
 }
 
+function normalizeArticleBody(article: NewsArticle) {
+  const description = (article.description || "").trim()
+  let content = (article.content || "").trim()
+
+  if (description && content.toLowerCase().startsWith(description.toLowerCase())) {
+    content = content.slice(description.length).trim()
+  }
+
+  const blocks =
+    content && content.includes("\n\n")
+      ? content
+          .split(/\n{2,}/)
+          .map((block) => block.trim())
+          .filter(Boolean)
+      : content
+          .split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/g)
+          .map((sentence) => sentence.trim())
+          .filter(Boolean)
+          .reduce<string[]>((acc, sentence) => {
+            const current = acc[acc.length - 1]
+            if (!current) {
+              acc.push(sentence)
+              return acc
+            }
+            if (current.length < 320) {
+              acc[acc.length - 1] = `${current} ${sentence}`
+            } else {
+              acc.push(sentence)
+            }
+            return acc
+          }, [])
+
+  const filteredBlocks = blocks.filter((block) => block.toLowerCase() !== description.toLowerCase())
+  return {
+    lead: description || filteredBlocks[0] || article.title,
+    blocks: filteredBlocks.length ? filteredBlocks : description ? [description] : []
+  }
+}
+
 function estimateReadTime(article: NewsArticle) {
   const text = article.content || article.description || article.title
   const words = text.split(/\s+/).filter(Boolean).length
@@ -83,13 +122,23 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
     notFound()
   }
 
-  const contentBlocks = (article.content || article.description || "")
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean)
-
+  const normalizedBody = normalizeArticleBody(article)
+  const contentBlocks = normalizedBody.blocks
   const entityGroups = Object.entries(article.entities || {}).filter(([, values]) => values?.length)
   const readTime = estimateReadTime(article)
+  const leadSummary = normalizedBody.lead
+  const storyFacts = [
+    { label: "Source", value: article.source_name || "DUBNEWSAI" },
+    {
+      label: "Coverage",
+      value: article.duplicate_count && article.duplicate_count > 1 ? `${article.duplicate_count} sources` : "Single source"
+    },
+    { label: "Read time", value: `${readTime} min` },
+    {
+      label: "Quality",
+      value: article.quality_score !== undefined ? `${Math.round(article.quality_score)}%` : "N/A"
+    }
+  ]
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -153,7 +202,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
                 {article.title}
               </h1>
               <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-white/58 sm:text-lg">
-                {article.description || "A full on-platform article view with source context, enrichment metadata, and readable long-form formatting."}
+                {leadSummary || "A full on-platform article view with source context, enrichment metadata, and readable long-form formatting."}
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs uppercase tracking-[0.22em] text-white/42">
                 <span>{article.source_name || "DUBNEWSAI"}</span>
@@ -183,7 +232,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
                 Read the story here first, then decide if you need the original publisher.
               </h2>
               <p className="mt-4 text-base leading-8 text-white/62">
-                {article.description || article.content || "This article is available in DUBNEWSAI with full metadata, source provenance, and enrichment context."}
+                {leadSummary || article.content || "This article is available in DUBNEWSAI with full metadata, source provenance, and enrichment context."}
               </p>
             </div>
           </div>
@@ -193,17 +242,17 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
       <div className="mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
         <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
           <article className="panel-deep p-8 lg:p-10">
-            {article.description ? (
+            {leadSummary ? (
               <div className="rounded-[1.8rem] border border-white/10 bg-white/[0.04] p-6">
                 <div className="story-kicker">Executive take</div>
-                <p className="mt-4 font-editorial text-[1.3rem] leading-9 text-white/86">{article.description}</p>
+                <p className="mt-4 font-editorial text-[1.3rem] leading-9 text-white/86">{leadSummary}</p>
               </div>
             ) : null}
 
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              <StoryFact label="Source" value={article.source_name || "DUBNEWSAI"} />
-              <StoryFact label="Coverage" value={article.duplicate_count && article.duplicate_count > 1 ? `${article.duplicate_count} sources` : "Single source"} />
-              <StoryFact label="Read time" value={`${readTime} min`} />
+            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {storyFacts.map((fact) => (
+                <StoryFact key={fact.label} label={fact.label} value={fact.value} />
+              ))}
             </div>
 
             <div className="mt-8 space-y-6">

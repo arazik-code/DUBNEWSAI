@@ -73,9 +73,9 @@ function TickerItem({
 
       {stock.is_live_data === false ? (
         <div className="text-right">
-          <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">Awaiting feed</div>
+          <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">Verified snapshot</div>
           <div className="mt-2 inline-flex items-center gap-1 text-xs text-white/42">
-            Watchlist
+            Reference board
             <ArrowUpRight className="h-3.5 w-3.5" />
           </div>
         </div>

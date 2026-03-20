@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
     ENABLE_EMBEDDED_SYNC: bool | None = None
-    EMBEDDED_NEWS_SYNC_MINUTES: int = 30
-    EMBEDDED_MARKET_SYNC_MINUTES: int = 60
+    EMBEDDED_NEWS_SYNC_MINUTES: int = 5
+    EMBEDDED_MARKET_SYNC_MINUTES: int = 15
 
     DATABASE_URL: str
     DB_ECHO: bool = False

@@ -42,6 +42,41 @@ class MarketService:
         }
 
     @staticmethod
+    def _market_row_to_snapshot(row: MarketData) -> dict:
+        payload = MarketDataResponse.model_validate(row).model_dump(mode="json")
+        payload["is_live_data"] = False
+        payload["data_source"] = "historical_snapshot"
+        return payload
+
+    @staticmethod
+    async def _get_latest_known_snapshots(
+        db: AsyncSession,
+        symbols: list[str],
+    ) -> dict[str, dict]:
+        normalized_symbols = [symbol.upper() for symbol in symbols if symbol]
+        if not normalized_symbols:
+            return {}
+        subquery = (
+            select(
+                MarketData.symbol,
+                func.max(MarketData.data_timestamp).label("max_timestamp"),
+            )
+            .where(MarketData.symbol.in_(normalized_symbols), MarketData.price > 0)
+            .group_by(MarketData.symbol)
+            .subquery()
+        )
+        query = select(MarketData).join(
+            subquery,
+            and_(
+                MarketData.symbol == subquery.c.symbol,
+                MarketData.data_timestamp == subquery.c.max_timestamp,
+            ),
+        )
+        result = await db.execute(query)
+        rows = result.scalars().all()
+        return {row.symbol.upper(): MarketService._market_row_to_snapshot(row) for row in rows}
+
+    @staticmethod
     async def _get_watchlist_fallback(
         db: AsyncSession,
         market_type: MarketType | None = None,
@@ -284,11 +319,15 @@ class MarketService:
         serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
         if len(serialized) < limit:
             fallback_rows = await MarketService._get_watchlist_fallback(db, market_type=market_type, limit=limit)
+            known_snapshots = await MarketService._get_latest_known_snapshots(
+                db,
+                [fallback["symbol"] for fallback in fallback_rows],
+            )
             existing_symbols = {item["symbol"] for item in serialized}
             for fallback in fallback_rows:
                 if fallback["symbol"] in existing_symbols:
                     continue
-                serialized.append(fallback)
+                serialized.append(known_snapshots.get(fallback["symbol"], fallback))
                 existing_symbols.add(fallback["symbol"])
                 if len(serialized) >= limit:
                     break
@@ -332,6 +371,7 @@ class MarketService:
         companies = list(result.scalars().all())
         serialized = [MarketDataResponse.model_validate(company).model_dump(mode="json") for company in companies]
         if len(serialized) < len(symbols):
+            known_snapshots = await MarketService._get_latest_known_snapshots(db, symbols)
             fallback_companies = await MarketService._get_watchlist_fallback(
                 db,
                 market_type=MarketType.STOCK,
@@ -342,7 +382,7 @@ class MarketService:
             for fallback in fallback_companies:
                 if fallback["symbol"] in existing_symbols:
                     continue
-                serialized.append(fallback)
+                serialized.append(known_snapshots.get(fallback["symbol"], fallback))
                 existing_symbols.add(fallback["symbol"])
         await cache.cache_market_real_estate(serialized, ttl=120)
         return [MarketDataResponse.model_validate(company) for company in serialized]
@@ -388,6 +428,7 @@ class MarketService:
 
         serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
         if include_watchlist_fallback:
+            known_snapshots = await MarketService._get_latest_known_snapshots(db, normalized_symbols)
             watchlist_result = await db.execute(
                 select(WatchlistSymbol)
                 .where(WatchlistSymbol.symbol.in_(normalized_symbols), WatchlistSymbol.is_active.is_(True))
@@ -397,7 +438,7 @@ class MarketService:
             for watchlist in watchlist_result.scalars().all():
                 if watchlist.symbol in existing_symbols:
                     continue
-                serialized.append(MarketService._watchlist_to_market_snapshot(watchlist))
+                serialized.append(known_snapshots.get(watchlist.symbol, MarketService._watchlist_to_market_snapshot(watchlist)))
                 existing_symbols.add(watchlist.symbol)
 
         if limit is not None:
@@ -499,7 +540,8 @@ class MarketService:
         if watchlist is None:
             return None
 
-        fallback_snapshot = MarketService._watchlist_to_market_snapshot(watchlist)
+        known_snapshots = await MarketService._get_latest_known_snapshots(db, [symbol.upper()])
+        fallback_snapshot = known_snapshots.get(symbol.upper(), MarketService._watchlist_to_market_snapshot(watchlist))
         await cache.cache_market_symbol(symbol, fallback_snapshot, ttl=60)
         return fallback_snapshot
 

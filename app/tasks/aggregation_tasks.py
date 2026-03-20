@@ -14,6 +14,7 @@ from app.schemas.news import NewsArticleResponse
 from app.services.alert_service import AlertService
 from app.services.aggregation.market_aggregator import market_aggregator
 from app.services.aggregation.news_aggregator import news_aggregator
+from app.services.ai_service import AIService
 from app.services.broadcast_service import BroadcastService
 from app.services.market_service import MarketService
 from app.services.news_service import NewsService
@@ -88,6 +89,10 @@ async def _aggregate_all_news_sources() -> dict[str, object]:
             payload = NewsArticleResponse.model_validate(article).model_dump(mode="json")
             await BroadcastService.broadcast_new_article(payload)
 
+        if created_ranked:
+            trends = await AIService.detect_trends(db, days=7)
+            await AlertService.check_trend_alerts(db, trends)
+
     summary = {
         "created": len(created_ranked),
         "skipped": skipped,
@@ -160,7 +165,13 @@ async def _aggregate_full_market_data() -> dict[str, object]:
                 )
                 await db.commit()
                 saved_quotes += 1
-                await AlertService.check_price_alerts(db, quote.symbol, quote.price)
+                await AlertService.check_market_alerts(
+                    db,
+                    symbol=quote.symbol,
+                    current_price=quote.price,
+                    change_percent=quote.change_percent,
+                    volume=quote.volume,
+                )
                 payload = MarketDataResponse.model_validate(market_data).model_dump(mode="json")
                 await BroadcastService.broadcast_market_update(quote.symbol, payload)
 

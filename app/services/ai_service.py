@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,6 +15,62 @@ from app.models.news import NewsArticle, NewsCategory
 
 
 class AIService:
+    STOPWORDS = {
+        "a",
+        "about",
+        "after",
+        "all",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "before",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "said",
+        "says",
+        "that",
+        "the",
+        "their",
+        "them",
+        "there",
+        "these",
+        "they",
+        "this",
+        "to",
+        "was",
+        "were",
+        "will",
+        "with",
+    }
+
+    LOW_SIGNAL_KEYWORDS = {
+        "article",
+        "business",
+        "coverage",
+        "estate",
+        "market",
+        "news",
+        "property",
+        "real",
+        "story",
+        "update",
+    }
+
     @staticmethod
     async def analyze_article(article: NewsArticle) -> dict[str, Any]:
         """Run sentiment, entity, keyword, and relevance analysis for an article."""
@@ -27,7 +84,8 @@ class AIService:
 
         sentiment_result = await asyncio.to_thread(ai_models.analyze_sentiment, text, True)
         entities = await asyncio.to_thread(ai_models.extract_entities, text)
-        keywords = await asyncio.to_thread(ai_models.extract_keywords, text, 10)
+        extracted_keywords = await asyncio.to_thread(ai_models.extract_keywords, text, 10)
+        keywords = AIService._sanitize_keywords(extracted_keywords, text=text)
 
         relevance_score = AIService._calculate_relevance_score(
             article=article,
@@ -44,6 +102,49 @@ class AIService:
             "keywords": keywords,
             "relevance_score": relevance_score,
         }
+
+    @classmethod
+    def _sanitize_keywords(
+        cls,
+        keywords: list[str] | None,
+        *,
+        text: str = "",
+        limit: int = 10,
+    ) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+
+        for keyword in keywords or []:
+            normalized = " ".join(re.findall(r"[A-Za-z0-9][A-Za-z0-9&+/-]*", str(keyword).lower())).strip()
+            if not normalized:
+                continue
+            if normalized in cls.STOPWORDS or normalized in cls.LOW_SIGNAL_KEYWORDS:
+                continue
+            if len(normalized) < 3:
+                continue
+            if normalized.isdigit():
+                continue
+            if normalized in seen:
+                continue
+            cleaned.append(normalized)
+            seen.add(normalized)
+
+        if len(cleaned) >= min(4, limit):
+            return cleaned[:limit]
+
+        fallback_counts = Counter(
+            token
+            for token in re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", text.lower())
+            if token not in cls.STOPWORDS and token not in cls.LOW_SIGNAL_KEYWORDS
+        )
+        for token, _ in fallback_counts.most_common(limit):
+            if token in seen:
+                continue
+            cleaned.append(token)
+            seen.add(token)
+            if len(cleaned) >= limit:
+                break
+        return cleaned[:limit]
 
     @staticmethod
     def _calculate_relevance_score(
@@ -138,7 +239,17 @@ class AIService:
         all_keywords: list[str] = []
         for article in articles:
             if article.keywords:
-                all_keywords.extend(article.keywords)
+                all_keywords.extend(
+                    AIService._sanitize_keywords(
+                        article.keywords,
+                        text=" ".join(
+                            part
+                            for part in [article.title, article.description or "", article.content or ""]
+                            if part
+                        ),
+                        limit=12,
+                    )
+                )
 
         keyword_counts = Counter(all_keywords)
         trends = [
@@ -152,6 +263,150 @@ class AIService:
         ]
         await cache.cache_analytics_trends(days, trends, ttl=300)
         return trends
+
+    @staticmethod
+    async def get_category_distribution(
+        db: AsyncSession,
+        *,
+        days: int = 7,
+    ) -> list[dict[str, int | float | str]]:
+        from_date = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await db.execute(
+            select(NewsArticle.category, func.count(NewsArticle.id))
+            .where(
+                and_(
+                    NewsArticle.published_at >= from_date,
+                    NewsArticle.is_published.is_(True),
+                )
+            )
+            .group_by(NewsArticle.category)
+        )
+        rows = result.all()
+        total = sum(count for _, count in rows) or 1
+        return [
+            {
+                "category": category.value,
+                "count": count,
+                "share_percent": round((count / total) * 100, 2),
+            }
+            for category, count in sorted(rows, key=lambda item: item[1], reverse=True)
+            if category is not None
+        ]
+
+    @staticmethod
+    async def get_sentiment_timeline(
+        db: AsyncSession,
+        *,
+        days: int = 7,
+    ) -> list[dict[str, int | str]]:
+        from_date = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await db.execute(
+            select(
+                func.date(NewsArticle.published_at).label("bucket"),
+                NewsArticle.sentiment,
+                func.count(NewsArticle.id),
+            )
+            .where(
+                and_(
+                    NewsArticle.published_at >= from_date,
+                    NewsArticle.is_published.is_(True),
+                )
+            )
+            .group_by(func.date(NewsArticle.published_at), NewsArticle.sentiment)
+            .order_by(func.date(NewsArticle.published_at).asc())
+        )
+        grouped: dict[str, dict[str, int]] = {}
+        for bucket, sentiment, count in result.all():
+            key = str(bucket)
+            grouped.setdefault(key, {"positive": 0, "neutral": 0, "negative": 0})
+            if sentiment is not None:
+                grouped[key][sentiment.value] = count
+        return [
+            {
+                "date": key,
+                "positive": values["positive"],
+                "neutral": values["neutral"],
+                "negative": values["negative"],
+                "total": values["positive"] + values["neutral"] + values["negative"],
+            }
+            for key, values in grouped.items()
+        ]
+
+    @staticmethod
+    async def get_provider_distribution(
+        db: AsyncSession,
+        *,
+        days: int = 7,
+    ) -> list[dict[str, int | float | str]]:
+        from_date = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await db.execute(
+            select(NewsArticle.primary_provider, func.count(NewsArticle.id))
+            .where(
+                and_(
+                    NewsArticle.published_at >= from_date,
+                    NewsArticle.is_published.is_(True),
+                )
+            )
+            .group_by(NewsArticle.primary_provider)
+            .order_by(func.count(NewsArticle.id).desc())
+        )
+        rows = result.all()
+        total = sum(count for _, count in rows) or 1
+        return [
+            {
+                "provider": (provider or "unknown"),
+                "count": count,
+                "share_percent": round((count / total) * 100, 2),
+            }
+            for provider, count in rows
+        ]
+
+    @staticmethod
+    async def get_market_mood(
+        db: AsyncSession,
+        *,
+        days: int = 7,
+    ) -> dict[str, Any]:
+        distribution = await AIService.get_sentiment_distribution(db, days=days)
+        trends = await AIService.detect_trends(db, days=days)
+        category_distribution = await AIService.get_category_distribution(db, days=days)
+
+        mood_score = round(
+            float(distribution["positive_percent"]) - float(distribution["negative_percent"]),
+            2,
+        )
+        if mood_score >= 20:
+            label = "Constructive"
+        elif mood_score >= 5:
+            label = "Measured optimism"
+        elif mood_score <= -20:
+            label = "Risk-off"
+        elif mood_score <= -5:
+            label = "Cautious"
+        else:
+            label = "Balanced"
+
+        leading_categories = ", ".join(
+            item["category"].replace("_", " ").title() for item in category_distribution[:2]
+        ) or "general market coverage"
+        leading_keywords = ", ".join(item["keyword"] for item in trends[:4]) or "no clear thematic concentration"
+        summary = (
+            f"{label} market mood with {distribution['positive_percent']}% positive coverage versus "
+            f"{distribution['negative_percent']}% negative coverage. The strongest current narrative centers on "
+            f"{leading_categories}, with momentum around {leading_keywords}."
+        )
+        return {
+            "score": mood_score,
+            "label": label,
+            "summary": summary,
+            "drivers": {
+                "positive_percent": distribution["positive_percent"],
+                "negative_percent": distribution["negative_percent"],
+                "neutral_percent": distribution["neutral_percent"],
+                "leading_categories": category_distribution[:3],
+                "leading_keywords": trends[:6],
+            },
+        }
 
     @staticmethod
     async def get_sentiment_distribution(

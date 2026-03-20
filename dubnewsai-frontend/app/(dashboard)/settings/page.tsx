@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { Bell, Building2, ShieldCheck, SlidersHorizontal, Waves, Workflow } from "lucide-react"
 
 import { AuthGuard } from "@/components/auth/AuthGuard"
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner"
@@ -22,19 +23,26 @@ export default function SettingsPage() {
     }
   }, [hydrateNotifications, notifications])
 
+  const unreadCount = realtimeNotifications.filter((notification) => !notification.is_read).length
+
   return (
     <AuthGuard>
       <div className="space-y-8">
         <PremiumPageHero
           eyebrow="Workspace settings"
-          title="Identity, notifications, and control surfaces should feel calm and precise."
-          description="Profile identity and live inbox behavior now sit inside the same premium interface as the rest of the product, so settings feel integrated instead of bolted on."
-          chips={["Operator identity", "Realtime inbox", "Priority-aware", "Workspace control"]}
+          title="Settings should feel like command infrastructure, not a demo page."
+          description="DUBNEWSAI settings now frame identity, notification posture, workspace behavior, and operating preferences as part of a real enterprise workspace."
+          chips={["Operator identity", "Inbox posture", "Workspace policy", "Delivery controls"]}
           stats={[
             {
               label: "Unread inbox",
-              value: `${realtimeNotifications.filter((notification) => !notification.is_read).length}`,
-              hint: "Live items waiting for review"
+              value: `${unreadCount}`,
+              hint: "Live items still waiting for review"
+            },
+            {
+              label: "Workspace role",
+              value: titleCase(user?.role || "user"),
+              hint: "Current permission posture"
             },
             {
               label: "Notification stream",
@@ -42,35 +50,43 @@ export default function SettingsPage() {
               hint: "Hydrated across API and realtime events"
             },
             {
-              label: "Role",
-              value: titleCase(user?.role || "user"),
-              hint: "Current workspace permission level"
-            },
-            {
               label: "Workspace mode",
-              value: "Live sync",
-              hint: "Signals continue to update in the background"
+              value: "Live monitoring",
+              hint: "Signals continue updating in the background"
             }
           ]}
           tone="violet"
         />
 
-        <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="panel-premium p-6 sm:p-8">
-            <p className="story-kicker">Profile</p>
-            <h2 className="mt-3 text-3xl font-semibold text-white">Operator identity</h2>
-            <div className="mt-6 grid gap-4 rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-5">
-              <ProfileRow label="Name" value={user?.full_name || "Not set"} />
-              <ProfileRow label="Email" value={user?.email || "Unknown"} />
-              <ProfileRow label="Role" value={titleCase(user?.role || "user")} />
-            </div>
+        <section className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+          <div className="space-y-6">
+            <article className="panel-premium p-6 sm:p-8">
+              <p className="story-kicker">Operator identity</p>
+              <h2 className="mt-4 text-3xl font-semibold text-white">Workspace profile</h2>
+              <div className="mt-6 grid gap-4 rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-5">
+                <ProfileRow label="Name" value={user?.full_name || "Not set"} />
+                <ProfileRow label="Email" value={user?.email || "Unknown"} />
+                <ProfileRow label="Role" value={titleCase(user?.role || "user")} />
+              </div>
+            </article>
+
+            <article className="panel-premium p-6 sm:p-8">
+              <p className="story-kicker">Workspace posture</p>
+              <h2 className="mt-4 text-3xl font-semibold text-white">Operational defaults</h2>
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <SettingTile icon={Workflow} label="Alert delivery" value="Realtime + webhook ready" text="Designed for immediate operator response and automation handoff." />
+                <SettingTile icon={Waves} label="Data cadence" value="Continuous refresh" text="News and market layers keep refreshing in the background." />
+                <SettingTile icon={ShieldCheck} label="Security posture" value="Authenticated workspace" text="Role-aware access and operator identity are surfaced as first-class context." />
+                <SettingTile icon={Building2} label="Deployment mode" value="Production linked" text="Frontend and backend are attached to active deployment infrastructure." />
+              </div>
+            </article>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="story-kicker">Notifications</p>
-                <h2 className="mt-3 text-3xl font-semibold text-white">Live inbox</h2>
+                <p className="story-kicker">Inbox controls</p>
+                <h2 className="mt-3 text-3xl font-semibold text-white">Notification command surface</h2>
               </div>
               <button
                 type="button"
@@ -80,6 +96,12 @@ export default function SettingsPage() {
               >
                 Mark all read
               </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <ControlPill icon={Bell} label="Unread" value={`${unreadCount}`} />
+              <ControlPill icon={SlidersHorizontal} label="Priority aware" value="Enabled" />
+              <ControlPill icon={Workflow} label="Realtime sync" value="Active" />
             </div>
 
             {isLoading ? (
@@ -122,6 +144,49 @@ function ProfileRow({ label, value }: { label: string; value: string }) {
     <div>
       <div className="text-[10px] uppercase tracking-[0.26em] text-white/38">{label}</div>
       <div className="mt-2 text-lg font-semibold text-white">{value}</div>
+    </div>
+  )
+}
+
+function SettingTile({
+  icon: Icon,
+  label,
+  value,
+  text
+}: {
+  icon: typeof Workflow
+  label: string
+  value: string
+  text: string
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+      <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-white/38">
+        <Icon className="h-3.5 w-3.5 text-cyan-200" />
+        {label}
+      </div>
+      <div className="mt-3 text-lg font-semibold text-white">{value}</div>
+      <p className="mt-3 text-sm leading-7 text-white/56">{text}</p>
+    </div>
+  )
+}
+
+function ControlPill({
+  icon: Icon,
+  label,
+  value
+}: {
+  icon: typeof Bell
+  label: string
+  value: string
+}) {
+  return (
+    <div className="panel-premium p-5">
+      <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-white/40">
+        <Icon className="h-3.5 w-3.5 text-violet-200" />
+        {label}
+      </div>
+      <div className="mt-4 text-2xl font-semibold text-white">{value}</div>
     </div>
   )
 }

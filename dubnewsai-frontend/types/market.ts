@@ -3,6 +3,10 @@ export interface MarketStock {
   symbol: string
   name: string
   price: number
+  open_price?: number | null
+  high_price?: number | null
+  low_price?: number | null
+  previous_close?: number | null
   change: number
   change_percent: number
   volume: number

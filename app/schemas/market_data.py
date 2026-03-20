@@ -12,6 +12,10 @@ class MarketDataResponse(BaseModel):
     market_type: MarketType
     exchange: StockExchange | None
     price: float
+    open_price: float | None = None
+    high_price: float | None = None
+    low_price: float | None = None
+    previous_close: float | None = None
     change: float
     change_percent: float
     volume: int

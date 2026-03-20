@@ -23,9 +23,114 @@ settings = get_settings()
 
 
 class NewsService:
+    ARTICLE_BOILERPLATE_PATTERNS = (
+        r"this press release .*?source.*?$",
+        r"about newsfile corp.*?$",
+        r"view source version.*?$",
+        r"to view the source version of this press release.*?$",
+    )
+
     @staticmethod
     def generate_url_hash(url: str) -> str:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _normalize_text_blob(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.replace("\r\n", "\n").replace("\xa0", " ")
+        cleaned = re.sub(r"[ \t]+", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = cleaned.strip()
+        return cleaned or None
+
+    @classmethod
+    def _strip_article_boilerplate(cls, value: str | None) -> str | None:
+        cleaned = cls._normalize_text_blob(value)
+        if not cleaned:
+            return None
+        lowered = cleaned.lower()
+        for pattern in cls.ARTICLE_BOILERPLATE_PATTERNS:
+            match = re.search(pattern, lowered, flags=re.IGNORECASE | re.DOTALL)
+            if match:
+                cleaned = cleaned[: match.start()].strip()
+                lowered = cleaned.lower()
+        return cleaned or None
+
+    @staticmethod
+    def _sentences_from_text(value: str) -> list[str]:
+        return [
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])", value)
+            if sentence and sentence.strip()
+        ]
+
+    @classmethod
+    def _paragraphize_content(cls, content: str | None) -> str | None:
+        cleaned = cls._strip_article_boilerplate(content)
+        if not cleaned:
+            return None
+        if "\n\n" in cleaned:
+            paragraphs = [
+                " ".join(paragraph.split())
+                for paragraph in cleaned.split("\n\n")
+                if paragraph.strip()
+            ]
+            return "\n\n".join(paragraphs) if paragraphs else cleaned
+
+        sentences = cls._sentences_from_text(cleaned)
+        if len(sentences) <= 3:
+            return cleaned
+
+        paragraphs: list[str] = []
+        buffer: list[str] = []
+        for sentence in sentences:
+            buffer.append(sentence)
+            buffer_char_count = sum(len(item) for item in buffer)
+            if len(buffer) >= 3 or buffer_char_count >= 420:
+                paragraphs.append(" ".join(buffer))
+                buffer = []
+        if buffer:
+            paragraphs.append(" ".join(buffer))
+        return "\n\n".join(paragraphs) if paragraphs else cleaned
+
+    @classmethod
+    def _remove_description_overlap(
+        cls,
+        description: str | None,
+        content: str | None,
+    ) -> tuple[str | None, str | None]:
+        normalized_description = cls._normalize_text_blob(description)
+        normalized_content = cls._paragraphize_content(content)
+
+        if not normalized_content:
+            return normalized_description, normalized_content
+        if not normalized_description:
+            sentences = cls._sentences_from_text(normalized_content)
+            derived_description = " ".join(sentences[:2]).strip() if sentences else None
+            return derived_description or None, normalized_content
+
+        desc_lower = normalized_description.lower().strip()
+        content_lower = normalized_content.lower().strip()
+        if content_lower.startswith(desc_lower):
+            trimmed = normalized_content[len(normalized_description) :].strip(" \n-:;,")
+            normalized_content = cls._paragraphize_content(trimmed) or normalized_content
+        elif desc_lower in content_lower[: min(len(content_lower), len(desc_lower) + 80)]:
+            trimmed = re.sub(re.escape(normalized_description), "", normalized_content, count=1, flags=re.IGNORECASE).strip(" \n-:;,")
+            normalized_content = cls._paragraphize_content(trimmed) or normalized_content
+        return normalized_description, normalized_content
+
+    @classmethod
+    def _normalize_article_text(cls, description: str | None, content: str | None) -> tuple[str | None, str | None]:
+        return cls._remove_description_overlap(description, content)
+
+    @classmethod
+    def _serialized_article_payload(cls, article: NewsArticle) -> dict:
+        description, content = cls._normalize_article_text(article.description, article.content)
+        payload = NewsArticleResponse.model_validate(article).model_dump(mode="json")
+        payload["description"] = description
+        payload["content"] = content
+        return payload
 
     @staticmethod
     def _content_needs_enrichment(content: str | None, description: str | None = None) -> bool:
@@ -162,10 +267,15 @@ class NewsService:
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
 
+        normalized_description, normalized_content = NewsService._normalize_article_text(
+            article_data.description,
+            article_data.content,
+        )
+
         article = NewsArticle(
             title=article_data.title,
-            description=article_data.description,
-            content=article_data.content,
+            description=normalized_description,
+            content=normalized_content,
             url=article_url,
             url_hash=url_hash,
             source=article_data.source,
@@ -247,6 +357,7 @@ class NewsService:
         if not updated:
             return article
 
+        article.description, article.content = NewsService._normalize_article_text(article.description, article.content)
         article.enrichment_status = "processing"
 
         analysis = await AIService.analyze_article(article)
@@ -348,7 +459,7 @@ class NewsService:
                 article.view_count += 1
                 await db.commit()
                 await db.refresh(article)
-                article_payload = NewsArticleResponse.model_validate(article).model_dump(mode="json")
+                article_payload = NewsService._serialized_article_payload(article)
                 await cache.cache_news_detail(article_id, article_payload, ttl=600)
                 return article_payload
             return cached_article
@@ -368,12 +479,9 @@ class NewsService:
         article.view_count += 1
         await db.commit()
         await db.refresh(article)
-        await cache.cache_news_detail(
-            article_id,
-            NewsArticleResponse.model_validate(article).model_dump(mode="json"),
-            ttl=600,
-        )
-        return article
+        payload = NewsService._serialized_article_payload(article)
+        await cache.cache_news_detail(article_id, payload, ttl=600)
+        return payload
 
     @staticmethod
     async def get_featured_articles(db: AsyncSession, limit: int = 5) -> list[NewsArticle]:

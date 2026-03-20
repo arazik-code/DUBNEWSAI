@@ -58,7 +58,13 @@ async def _update_stock_prices() -> None:
                 )
                 if market_data is not None:
                     updated += 1
-                    await AlertService.check_price_alerts(db, symbol_obj.symbol, market_data.price)
+                    await AlertService.check_market_alerts(
+                        db,
+                        symbol=symbol_obj.symbol,
+                        current_price=market_data.price,
+                        change_percent=market_data.change_percent,
+                        volume=market_data.volume,
+                    )
                     payload = MarketDataResponse.model_validate(market_data).model_dump(mode="json")
                     await BroadcastService.broadcast_market_update(symbol_obj.symbol, payload)
                 await asyncio.sleep(1)

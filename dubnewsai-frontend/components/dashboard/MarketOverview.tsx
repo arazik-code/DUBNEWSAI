@@ -23,7 +23,7 @@ function ProviderLabel({ provider, fallback }: { provider?: string | null; fallb
   if (fallback) {
     return (
       <span className="rounded-full border border-amber-300/15 bg-amber-300/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-amber-200/82">
-        Watchlist fallback
+        Reference snapshot
       </span>
     )
   }
@@ -72,7 +72,11 @@ function BoardRow({ stock }: { stock: MarketStock }) {
 
       <div className="space-y-1 text-sm text-white/52">
         {fallback ? (
-          <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">Awaiting live quote</div>
+          <>
+            <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">Last verified snapshot</div>
+            {stock.price > 0 ? <div className="text-xl font-semibold text-white">{formatCompactCurrency(stock.price, stock.currency || "AED")}</div> : null}
+            <div>{stock.data_source === "historical_snapshot" ? "Stored market snapshot" : "Reference board coverage"}</div>
+          </>
         ) : (
           <>
             <div className="text-xl font-semibold text-white">{formatCompactCurrency(stock.price, stock.currency || "AED")}</div>
@@ -231,7 +235,7 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
 
         {hasFallbackOnly ? (
           <div className="rounded-[1.6rem] border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-200/82">
-            Several local symbols are still in watchlist-fallback mode because an upstream provider is not returning a valid live quote.
+            Some local symbols are currently showing the latest verified snapshot while upstream boards refresh.
           </div>
         ) : null}
 
@@ -328,7 +332,7 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
 
       {hasFallbackOnly ? (
         <div className="rounded-[1.6rem] border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-200/82">
-          Several local symbols are still in watchlist-fallback mode because an upstream provider is not returning a valid live quote.
+          Some local symbols are currently showing the latest verified snapshot while upstream boards refresh.
         </div>
       ) : null}
 
@@ -391,7 +395,7 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
               ))
             ) : (
               <div className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/56">
-                Commodity feeds are configured, but no current rows were returned by the active providers.
+                Commodity boards are refreshing. The platform will surface the latest verified commodity rows as soon as the active feed responds.
               </div>
             )}
           </StackPanel>

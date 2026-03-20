@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 import feedparser
@@ -310,6 +311,17 @@ class FreeDataAggregator:
         return [record for record in records if self._looks_relevant(record.title, record.description, record.content)]
 
     @staticmethod
+    def _summarize_body(value: str | None, limit: int = 360) -> str | None:
+        cleaned = FreeDataAggregator._clean_text(value, 6000)
+        if not cleaned:
+            return None
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'])", cleaned)
+        summary = " ".join(sentence.strip() for sentence in sentences[:2] if sentence.strip()).strip()
+        if not summary:
+            summary = cleaned[:limit]
+        return summary[:limit].rstrip()
+
+    @staticmethod
     def _default_news_query(query: str | None = None) -> str:
         return query or "Dubai real estate"
 
@@ -523,7 +535,8 @@ class FreeDataAggregator:
                 if not url:
                     continue
                 title = self._clean_text(article.get("title"), 500) or "Untitled"
-                description = self._clean_text(article.get("body"), 5000)
+                body = self._clean_text(article.get("body"), 50000)
+                description = self._summarize_body(body)
                 source_title = None
                 source = article.get("source")
                 if isinstance(source, dict):
@@ -532,7 +545,7 @@ class FreeDataAggregator:
                     NormalizedNewsRecord(
                         title=title,
                         description=description,
-                        content=self._clean_text(article.get("body"), 50000),
+                        content=body,
                         url=url,
                         source=NewsSource.RAPID_API,
                         source_name=self._clean_text(source_title, 200) or "NewsAPI.ai",
@@ -799,6 +812,60 @@ class FreeDataAggregator:
 
         return await asyncio.to_thread(_download)
 
+    async def _fetch_yahoo_chart_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
+        payload = await self._request_json(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{alias}",
+            params={"interval": "1d", "range": "5d", "includePrePost": "false"},
+        )
+        result = (payload.get("chart") or {}).get("result") or []
+        if not result:
+            return None
+
+        meta = result[0].get("meta") or {}
+        indicators = ((result[0].get("indicators") or {}).get("quote") or [{}])[0]
+        closes = (indicators.get("close") or []) or []
+        opens = (indicators.get("open") or []) or []
+        highs = (indicators.get("high") or []) or []
+        lows = (indicators.get("low") or []) or []
+        volumes = (indicators.get("volume") or []) or []
+        timestamps = result[0].get("timestamp") or []
+
+        if not timestamps or not closes:
+            return None
+
+        valid_indices = [index for index, close_value in enumerate(closes) if self._safe_float(close_value) not in (None, 0)]
+        if not valid_indices:
+            return None
+
+        last_index = valid_indices[-1]
+        previous_index = valid_indices[-2] if len(valid_indices) > 1 else last_index
+        price = self._safe_float(closes[last_index])
+        previous_close = self._safe_float(closes[previous_index])
+        if price is None or price <= 0:
+            return None
+
+        change = price - previous_close if previous_close not in (None, 0) else 0.0
+        change_percent = (change / previous_close) * 100 if previous_close not in (None, 0) else 0.0
+
+        return NormalizedMarketQuote(
+            symbol=watchlist.symbol.upper(),
+            alias_used=alias,
+            name=watchlist.name,
+            market_type=watchlist.market_type,
+            exchange=watchlist.exchange,
+            price=price,
+            open_price=self._safe_float(opens[last_index]) if len(opens) > last_index else None,
+            high_price=self._safe_float(highs[last_index]) if len(highs) > last_index else None,
+            low_price=self._safe_float(lows[last_index]) if len(lows) > last_index else None,
+            previous_close=previous_close,
+            volume=self._safe_int(volumes[last_index]) if len(volumes) > last_index else 0,
+            market_cap=self._safe_float(meta.get("marketCap")),
+            change=change,
+            change_percent=change_percent,
+            currency=str(meta.get("currency") or "AED"),
+            provider="yahoo_chart",
+        )
+
     @staticmethod
     def _extract_yahoo_frame(history: Any, alias: str, alias_count: int) -> Any | None:
         if history is None or getattr(history, "empty", True):
@@ -865,15 +932,31 @@ class FreeDataAggregator:
             history = await self._download_yahoo_history(yahoo_aliases)
         except Exception as exc:
             logger.warning("Yahoo Finance batch download failed: {}", str(exc))
-            return []
+            history = None
 
         quotes: list[NormalizedMarketQuote] = []
+        existing_symbols: set[str] = set()
         for item in watchlist_symbols:
             alias = aliases_by_symbol[item.symbol.upper()][0]
             frame = self._extract_yahoo_frame(history, alias, len(yahoo_aliases))
             quote = self._build_quote_from_history(item, alias, frame)
             if quote is not None:
                 quotes.append(quote)
+                existing_symbols.add(item.symbol.upper())
+
+        for item in watchlist_symbols:
+            if item.symbol.upper() in existing_symbols:
+                continue
+            for alias in aliases_by_symbol[item.symbol.upper()]:
+                try:
+                    quote = await self._fetch_yahoo_chart_quote(item, alias)
+                except Exception as exc:
+                    logger.debug("Yahoo chart quote failed for {} via {}: {}", item.symbol, alias, str(exc))
+                    continue
+                if quote is not None:
+                    quotes.append(quote)
+                    existing_symbols.add(item.symbol.upper())
+                    break
         return quotes
 
     async def _fetch_twelve_data_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
@@ -1004,7 +1087,7 @@ class FreeDataAggregator:
         if not settings.MARKETSTACK_API_KEY:
             return None
         payload = await self._request_json(
-            "https://api.marketstack.com/v1/eod/latest",
+            "https://api.marketstack.com/v2/eod/latest",
             params={"access_key": settings.MARKETSTACK_API_KEY, "symbols": alias},
         )
         data = payload.get("data", [])
@@ -1015,7 +1098,9 @@ class FreeDataAggregator:
         if price is None or price <= 0:
             return None
         open_price = self._safe_float(quote_data.get("open"))
-        previous_close = self._safe_float(quote_data.get("close"))
+        previous_close = self._safe_float(quote_data.get("previous_close")) or self._safe_float(quote_data.get("close"))
+        change = price - previous_close if previous_close not in (None, 0) else 0.0
+        change_percent = (change / previous_close) * 100 if previous_close not in (None, 0) else 0.0
         return NormalizedMarketQuote(
             symbol=watchlist.symbol.upper(),
             alias_used=alias,
@@ -1029,14 +1114,15 @@ class FreeDataAggregator:
             previous_close=previous_close,
             volume=self._safe_int(quote_data.get("volume")),
             market_cap=None,
-            change=0.0,
-            change_percent=0.0,
+            change=change,
+            change_percent=change_percent,
             provider="marketstack",
         )
 
     @staticmethod
     def _quote_provider_name(fetcher: Any) -> str:
         mapping = {
+            "_fetch_yahoo_chart_quote": "yahoo_chart",
             "_fetch_twelve_data_quote": "twelve_data",
             "_fetch_finnhub_quote": "finnhub",
             "_fetch_fmp_quote": "financial_modeling_prep",
@@ -1047,22 +1133,19 @@ class FreeDataAggregator:
 
     async def _fetch_fallback_quote_for_symbol(self, watchlist: WatchlistSymbol, aliases: list[str]) -> NormalizedMarketQuote | None:
         fetchers = [
+            self._fetch_yahoo_chart_quote,
+            self._fetch_marketstack_quote,
             self._fetch_twelve_data_quote,
             self._fetch_finnhub_quote,
             self._fetch_fmp_quote,
             self._fetch_alpha_vantage_quote,
-            self._fetch_marketstack_quote,
         ]
         for alias in aliases:
             for fetcher in fetchers:
-                provider_name = self._quote_provider_name(fetcher)
                 try:
-                    quote = await provider_health.call_provider(provider_name, fetcher, watchlist, alias)
-                except CircuitBreakerOpenError:
-                    logger.debug("Quote provider {} skipped for {} because circuit breaker is open", provider_name, alias)
-                    continue
+                    quote = await fetcher(watchlist, alias)
                 except Exception as exc:
-                    logger.debug("Quote provider {} failed for {}: {}", provider_name, alias, str(exc))
+                    logger.debug("Quote provider {} failed for {}: {}", self._quote_provider_name(fetcher), alias, str(exc))
                     continue
                 if quote is not None:
                     return quote

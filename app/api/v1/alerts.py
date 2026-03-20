@@ -67,6 +67,14 @@ async def get_alerts(
     return [AlertResponse.model_validate(alert) for alert in alerts]
 
 
+@router.get("/intelligence")
+async def get_alert_intelligence(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await AlertService.get_alert_intelligence(db, current_user.id)
+
+
 @router.delete("/{alert_id}")
 async def delete_alert(
     alert_id: int,

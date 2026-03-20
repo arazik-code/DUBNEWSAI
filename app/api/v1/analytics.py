@@ -32,6 +32,15 @@ class SentimentDistribution(BaseModel):
     negative_percent: float
 
 
+class AnalyticsOverviewResponse(BaseModel):
+    mood: dict
+    sentiment_distribution: SentimentDistribution
+    trends: list[TrendResponse]
+    category_distribution: list[dict]
+    sentiment_timeline: list[dict]
+    provider_distribution: list[dict]
+
+
 @router.get("/trends", response_model=list[TrendResponse])
 async def get_trending_topics(
     days: int = Query(default=7, ge=1, le=30),
@@ -62,6 +71,30 @@ async def get_sentiment_distribution(
     del current_user
     distribution = await AIService.get_sentiment_distribution(db, category, days)
     return SentimentDistribution.model_validate(distribution)
+
+
+@router.get("/overview", response_model=AnalyticsOverviewResponse)
+async def get_analytics_overview(
+    days: int = Query(default=7, ge=1, le=30),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> AnalyticsOverviewResponse:
+    del current_user
+    sentiment_distribution = await AIService.get_sentiment_distribution(db, days=days)
+    trends = await AIService.detect_trends(db, days=days)
+    category_distribution = await AIService.get_category_distribution(db, days=days)
+    sentiment_timeline = await AIService.get_sentiment_timeline(db, days=days)
+    provider_distribution = await AIService.get_provider_distribution(db, days=days)
+    mood = await AIService.get_market_mood(db, days=days)
+    return AnalyticsOverviewResponse(
+        mood=mood,
+        sentiment_distribution=SentimentDistribution.model_validate(sentiment_distribution),
+        trends=[TrendResponse.model_validate(item) for item in trends],
+        category_distribution=category_distribution,
+        sentiment_timeline=sentiment_timeline,
+        provider_distribution=provider_distribution,
+    )
 
 
 @router.get("/recommendations", response_model=list[NewsArticleResponse])

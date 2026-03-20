@@ -6,6 +6,7 @@ import httpx
 from loguru import logger
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.alert import Alert, AlertFrequency, AlertStatus, AlertTrigger, AlertType
 from app.models.news import NewsArticle
@@ -25,13 +26,37 @@ class AlertService:
 
     @staticmethod
     async def check_price_alerts(db: AsyncSession, symbol: str, current_price: float) -> None:
+        await AlertService.check_market_alerts(
+            db,
+            symbol=symbol,
+            current_price=current_price,
+            change_percent=None,
+            volume=None,
+        )
+
+    @staticmethod
+    async def check_market_alerts(
+        db: AsyncSession,
+        *,
+        symbol: str,
+        current_price: float,
+        change_percent: float | None,
+        volume: int | None,
+    ) -> None:
         result = await db.execute(
             select(Alert).where(
                 and_(
                     Alert.symbol == symbol,
                     Alert.is_active.is_(True),
                     Alert.status == AlertStatus.ACTIVE,
-                    Alert.alert_type.in_([AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW]),
+                    Alert.alert_type.in_(
+                        [
+                            AlertType.PRICE_ABOVE,
+                            AlertType.PRICE_BELOW,
+                            AlertType.PRICE_CHANGE_PERCENT,
+                            AlertType.VOLUME_SPIKE,
+                        ]
+                    ),
                 )
             )
         )
@@ -51,6 +76,17 @@ class AlertService:
                     triggered = True
                     message = f"{symbol} price is below {alert.threshold_value}: {current_price}"
 
+            if alert.alert_type == AlertType.PRICE_CHANGE_PERCENT and alert.threshold_value is not None and change_percent is not None:
+                if abs(change_percent) >= alert.threshold_value:
+                    triggered = True
+                    direction = "up" if change_percent >= 0 else "down"
+                    message = f"{symbol} moved {direction} {change_percent:.2f}% against a {alert.threshold_value:.2f}% threshold"
+
+            if alert.alert_type == AlertType.VOLUME_SPIKE and alert.threshold_value is not None and volume is not None:
+                if volume >= alert.threshold_value:
+                    triggered = True
+                    message = f"{symbol} volume reached {volume}, exceeding the {alert.threshold_value:.0f} threshold"
+
             if triggered:
                 await AlertService._trigger_alert(
                     db,
@@ -59,6 +95,8 @@ class AlertService:
                         "symbol": symbol,
                         "current_price": current_price,
                         "threshold": alert.threshold_value,
+                        "change_percent": change_percent,
+                        "volume": volume,
                     },
                     message,
                 )
@@ -156,6 +194,38 @@ class AlertService:
             )
 
     @staticmethod
+    async def check_trend_alerts(db: AsyncSession, trends: list[dict]) -> None:
+        if not trends:
+            return
+        result = await db.execute(
+            select(Alert).where(
+                and_(
+                    Alert.is_active.is_(True),
+                    Alert.status == AlertStatus.ACTIVE,
+                    Alert.alert_type == AlertType.TREND_DETECTED,
+                    Alert.keywords.is_not(None),
+                )
+            )
+        )
+        alerts = result.scalars().all()
+        normalized_trends = {str(item.get("keyword", "")).lower(): item for item in trends}
+        for alert in alerts:
+            if not alert.keywords:
+                continue
+            matches = [keyword for keyword in alert.keywords if keyword.lower() in normalized_trends]
+            if not matches:
+                continue
+            await AlertService._trigger_alert(
+                db,
+                alert,
+                {
+                    "matched_keywords": matches,
+                    "trends": [normalized_trends[keyword.lower()] for keyword in matches if keyword.lower() in normalized_trends],
+                },
+                f"Trend momentum detected for {', '.join(matches)}",
+            )
+
+    @staticmethod
     def _frequency_allows_trigger(alert: Alert) -> bool:
         if alert.last_triggered_at is None:
             return True
@@ -249,6 +319,67 @@ class AlertService:
             select(Alert).where(Alert.user_id == user_id).order_by(Alert.created_at.desc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_user_alert_triggers(
+        db: AsyncSession,
+        user_id: int,
+        *,
+        limit: int = 20,
+    ) -> list[AlertTrigger]:
+        result = await db.execute(
+            select(AlertTrigger)
+            .join(Alert, Alert.id == AlertTrigger.alert_id)
+            .options(selectinload(AlertTrigger.alert))
+            .where(Alert.user_id == user_id)
+            .order_by(AlertTrigger.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_alert_intelligence(db: AsyncSession, user_id: int) -> dict:
+        alerts = await AlertService.get_user_alerts(db, user_id)
+        triggers = await AlertService.get_user_alert_triggers(db, user_id, limit=12)
+        return {
+            "summary": {
+                "total": len(alerts),
+                "active": len([alert for alert in alerts if alert.is_active]),
+                "paused": len([alert for alert in alerts if not alert.is_active]),
+                "triggered": len([alert for alert in alerts if alert.trigger_count > 0]),
+            },
+            "templates": [
+                {
+                    "name": "DFM price breakout",
+                    "alert_type": AlertType.PRICE_CHANGE_PERCENT.value,
+                    "frequency": AlertFrequency.INSTANT.value,
+                    "description": "Trigger when a UAE symbol breaks above an intraday move threshold.",
+                },
+                {
+                    "name": "Developer headline watch",
+                    "alert_type": AlertType.KEYWORD_MATCH.value,
+                    "frequency": AlertFrequency.INSTANT.value,
+                    "description": "Watch for Emaar, Aldar, Damac, RERA, DLD, or area-specific headlines.",
+                },
+                {
+                    "name": "Trend acceleration",
+                    "alert_type": AlertType.TREND_DETECTED.value,
+                    "frequency": AlertFrequency.HOURLY.value,
+                    "description": "Trigger when tracked themes begin dominating the news graph.",
+                },
+            ],
+            "recent_triggers": [
+                {
+                    "id": trigger.id,
+                    "alert_id": trigger.alert_id,
+                    "alert_name": trigger.alert.name if trigger.alert else "Alert",
+                    "message": trigger.message,
+                    "trigger_data": trigger.trigger_data,
+                    "created_at": trigger.created_at,
+                }
+                for trigger in triggers
+            ],
+        }
 
     @staticmethod
     async def delete_alert(db: AsyncSession, alert_id: int, user_id: int) -> bool:
