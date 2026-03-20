@@ -8,34 +8,33 @@ import { AuthGuard } from "@/components/auth/AuthGuard"
 import { ActionStatus } from "@/components/shared/ActionStatus"
 import { PremiumPageHero } from "@/components/ui/premium-page-hero"
 import { apiClient } from "@/lib/api/client"
-import { useCompetitorAnalysis, useCompetitors } from "@/lib/hooks/useEnterprise"
+import { useCompetitorAnalysis, useCompetitorCatalog, useCompetitors } from "@/lib/hooks/useEnterprise"
 import { formatCompactCurrency, formatDateTime, titleCase } from "@/lib/utils/formatters"
 
 export default function CompetitorsPage() {
   const queryClient = useQueryClient()
   const { data: competitors = [] } = useCompetitors()
+  const { data: competitorCatalog = [] } = useCompetitorCatalog()
   const [selectedId, setSelectedId] = useState<number | undefined>(undefined)
-  const [form, setForm] = useState({
-    name: "Sobha Realty",
-    sector: "Real Estate",
-    industry: "Real Estate",
-    ticker_symbol: "",
-    headquarters: "Dubai",
-    market_share_percent: 6,
-    revenue_growth_rate: 14
-  })
+  const [catalogSelection, setCatalogSelection] = useState("")
   const selected = useMemo(() => competitors.find((item) => item.id === selectedId) || competitors[0], [competitors, selectedId])
+  const selectedCatalogItem = useMemo(
+    () => competitorCatalog.find((item) => item.name === catalogSelection) || competitorCatalog.find((item) => !item.tracked) || competitorCatalog[0],
+    [catalogSelection, competitorCatalog]
+  )
   const { data: analysis } = useCompetitorAnalysis(selected?.id)
 
   const createCompetitor = useMutation({
     mutationFn: async () => {
+      if (!selectedCatalogItem) return
       await apiClient.post("/competitors", {
-        ...form,
-        ticker_symbol: form.ticker_symbol || null
+        ...selectedCatalogItem,
+        tracked: undefined
       })
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["competitors"] })
+      await queryClient.invalidateQueries({ queryKey: ["competitors", "catalog"] })
     }
   })
 
@@ -48,7 +47,7 @@ export default function CompetitorsPage() {
           description="Track rivals through SWOT, media pressure, and threat scoring without drowning the user in noise."
           chips={["SWOT automation", "Threat scoring", "Narrative drift", "Market position"]}
           stats={[
-            { label: "Tracked competitors", value: `${competitors.length}`, hint: "Seeded and manually added profiles" },
+            { label: "Tracked competitors", value: `${competitors.length}`, hint: "Curated names with consistent market context" },
             { label: "Threat level", value: titleCase(analysis?.threat_assessment.threat_level || "pending"), hint: "Current read on selected competitor pressure" },
             { label: "Top rival", value: selected?.name || "None", hint: selected?.sector || "Select a competitor to inspect" },
             { label: "Recent mentions", value: `${analysis?.news_intelligence.total_mentions ?? 0}`, hint: "Coverage counted over the recent analysis window" }
@@ -86,36 +85,47 @@ export default function CompetitorsPage() {
             </div>
 
             <div className="mt-8 rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-5">
-              <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Add competitor</div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <Field label="Name">
-                  <input className="input-premium" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+              <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Track from curated universe</div>
+              <div className="mt-4 grid gap-4">
+                <Field label="Supported competitor">
+                  <select className="input-premium" value={selectedCatalogItem?.name || ""} onChange={(event) => setCatalogSelection(event.target.value)}>
+                    {competitorCatalog.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name} - {item.sector}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
-                <Field label="Sector">
-                  <input className="input-premium" value={form.sector} onChange={(event) => setForm((current) => ({ ...current, sector: event.target.value }))} />
-                </Field>
-                <Field label="Industry">
-                  <input className="input-premium" value={form.industry} onChange={(event) => setForm((current) => ({ ...current, industry: event.target.value }))} />
-                </Field>
-                <Field label="Ticker">
-                  <input className="input-premium" value={form.ticker_symbol} onChange={(event) => setForm((current) => ({ ...current, ticker_symbol: event.target.value.toUpperCase() }))} />
-                </Field>
-                <Field label="Headquarters">
-                  <input className="input-premium" value={form.headquarters} onChange={(event) => setForm((current) => ({ ...current, headquarters: event.target.value }))} />
-                </Field>
-                <Field label="Market share %">
-                  <input type="number" className="input-premium" value={form.market_share_percent} onChange={(event) => setForm((current) => ({ ...current, market_share_percent: Number(event.target.value) }))} />
-                </Field>
+                {selectedCatalogItem ? (
+                  <div className="rounded-[1.4rem] border border-white/10 bg-black/10 p-4">
+                    <div className="text-sm font-medium text-white">{selectedCatalogItem.name}</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.2em] text-white/40">
+                      {selectedCatalogItem.ticker_symbol || "Private"} • {selectedCatalogItem.headquarters || "HQ pending"}
+                    </div>
+                    <p className="mt-3 text-sm leading-7 text-white/58">{selectedCatalogItem.description}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(selectedCatalogItem.tags || []).map((tag) => (
+                        <span key={tag} className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-              <button onClick={() => createCompetitor.mutate()} className="action-premium mt-5" disabled={createCompetitor.isPending}>
+              <button
+                onClick={() => createCompetitor.mutate()}
+                className="action-premium mt-5"
+                disabled={createCompetitor.isPending || !selectedCatalogItem || selectedCatalogItem.tracked}
+              >
                 <Plus className="h-4 w-4" />
-                {createCompetitor.isPending ? "Saving..." : "Add competitor"}
+                {createCompetitor.isPending ? "Saving..." : selectedCatalogItem?.tracked ? "Already tracked" : "Track competitor"}
               </button>
               <ActionStatus
                 isPending={createCompetitor.isPending}
                 isSuccess={createCompetitor.isSuccess}
                 error={createCompetitor.error}
-                successMessage="Competitor added."
+                successMessage="Competitor added from the curated universe."
               />
             </div>
           </article>

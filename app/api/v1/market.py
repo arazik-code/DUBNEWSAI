@@ -168,6 +168,28 @@ async def estimate_property_value(
     return PropertyValuationResponse.model_validate(data)
 
 
+@router.get("/property-valuation/options")
+async def get_property_valuation_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> dict:
+    del current_user
+    return await property_valuation.get_property_options(db)
+
+
+@router.get("/property-valuation/preset")
+async def get_property_valuation_preset(
+    location: str = Query(..., min_length=2),
+    property_type: str = Query(default="Apartment"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> dict:
+    del current_user
+    return await property_valuation.get_property_preset(db, location=location, property_type=property_type)
+
+
 @router.post("/property-valuation/roi", response_model=ROIResponse)
 async def calculate_property_roi(
     payload: ROIRequest,

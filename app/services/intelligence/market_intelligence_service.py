@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.market_data import EconomicIndicator, MarketData
 from app.models.news import NewsArticle
+from app.utils.symbols import display_symbol, normalize_symbol
 
 
 @dataclass(slots=True)
@@ -34,19 +35,19 @@ class MarketIntelligenceService:
     """Generate additive intelligence views from stored market, macro, and news history."""
 
     SECTOR_MAP: dict[str, str] = {
-        "EMAAR.DU": "Real Estate",
-        "DAMAC.DU": "Real Estate",
-        "DEYAAR.DU": "Real Estate",
-        "UPP.DU": "Real Estate",
-        "AMLAK.DU": "Real Estate Finance",
-        "ALDAR.AD": "Real Estate",
-        "ESHRAQ.AD": "Real Estate",
-        "RAKPROP.AD": "Real Estate",
-        "DIC.DU": "Diversified",
-        "DFM.DU": "Capital Markets",
-        "ADCB.AD": "Banking",
-        "FAB.AD": "Banking",
-        "ADNOC.AD": "Energy",
+        "EMAAR": "Real Estate",
+        "DAMAC": "Real Estate",
+        "DEYAAR": "Real Estate",
+        "UNIONPROP": "Real Estate",
+        "AMLAK": "Real Estate Finance",
+        "ALDAR": "Real Estate",
+        "ESHRAQ": "Real Estate",
+        "RAKPROP": "Real Estate",
+        "DIC": "Diversified",
+        "DFM": "Capital Markets",
+        "ADCB": "Banking",
+        "FAB": "Banking",
+        "ADNOCGAS": "Energy",
         "SPG": "Global Real Estate",
         "O": "Global Real Estate",
         "PLD": "Global Real Estate",
@@ -131,9 +132,9 @@ class MarketIntelligenceService:
 
             points.append(
                 MarketPoint(
-                    symbol=row.symbol,
+                    symbol=normalize_symbol(row.symbol),
                     name=row.name,
-                    sector=self.SECTOR_MAP.get(row.symbol, row.asset_class or row.market_type.value.title()),
+                    sector=self.SECTOR_MAP.get(normalize_symbol(row.symbol), row.asset_class or row.market_type.value.title()),
                     region=row.region or "Unknown",
                     exchange=row.exchange.value.upper() if row.exchange is not None else None,
                     asset_class=row.asset_class,
@@ -155,9 +156,9 @@ class MarketIntelligenceService:
         fallback_rows = fallback_result.scalars().all()
         return [
             MarketPoint(
-                symbol=row.symbol,
+                symbol=normalize_symbol(row.symbol),
                 name=row.name,
-                sector=self.SECTOR_MAP.get(row.symbol, row.asset_class or row.market_type.value.title()),
+                sector=self.SECTOR_MAP.get(normalize_symbol(row.symbol), row.asset_class or row.market_type.value.title()),
                 region=row.region or "Unknown",
                 exchange=row.exchange.value.upper() if row.exchange is not None else None,
                 asset_class=row.asset_class,
@@ -667,7 +668,22 @@ class MarketIntelligenceService:
             key=lambda item: {"high": 2, "medium": 1, "low": 0}.get(item["confidence"], 0),
             reverse=True,
         )
-        return ranked[:10]
+        if ranked:
+            return ranked[:10]
+
+        fallbacks = sorted(symbol_series.values(), key=lambda payload: self._safe_return([point.close for point in payload["points"]], 10), reverse=True)
+        return [
+            {
+                "type": "Momentum Leadership",
+                "symbol": payload["symbol"],
+                "indicator": "10D Return",
+                "value": round(self._safe_return([point.close for point in payload["points"]], 10) * 100, 2),
+                "rationale": f"{payload['name']} is leading the current sampled board on short-horizon price momentum.",
+                "confidence": "medium",
+            }
+            for payload in fallbacks[:4]
+            if payload["points"]
+        ]
 
     def _build_benchmark_snapshots(self, points: list[MarketPoint]) -> list[dict[str, Any]]:
         latest_by_symbol: dict[str, MarketPoint] = {}
@@ -687,6 +703,7 @@ class MarketIntelligenceService:
             payload.append(
                 {
                     "symbol": item.symbol,
+                    "display_symbol": display_symbol(item.symbol),
                     "name": item.name,
                     "price": round(item.close, 2),
                     "change_percent": round(item.change_percent, 2),

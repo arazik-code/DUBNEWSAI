@@ -255,3 +255,26 @@ export interface ComparativeAnalysisResponse {
   market_activity: string
   recommendation: string
 }
+
+export interface PropertyValuationOptionsResponse {
+  locations: {
+    name: string
+    price_per_sqft: number
+    trend_percent: number
+    supported_types: string[]
+  }[]
+  property_types: string[]
+  amenities: string[]
+}
+
+export interface PropertyValuationPresetResponse {
+  location: string
+  property_type: string
+  valuation_defaults: PropertyValuationRequest
+  roi_defaults: ROIRequest
+  market_context: {
+    baseline_price_per_sqft: number
+    market_trend_percent: number
+    supported_types: string[]
+  }
+}

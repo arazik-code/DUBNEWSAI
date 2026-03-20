@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { apiClient } from "@/lib/api/client"
 import { useAuthStore } from "@/lib/store/authStore"
-import type { InvestmentScore, Portfolio, PortfolioAnalytics, Watchlist } from "@/types"
+import type { InvestmentScore, Portfolio, PortfolioAnalytics, PortfolioAssetCatalogItem, Watchlist } from "@/types"
 
 export function usePortfolios() {
   const { accessToken, hydrated } = useAuthStore()
@@ -60,6 +60,20 @@ export function useInvestmentScore(symbol?: string, riskProfile = "moderate") {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && Boolean(symbol),
+    retry: false
+  })
+}
+
+export function usePortfolioAssetCatalog() {
+  const { accessToken, hydrated } = useAuthStore()
+
+  return useQuery<PortfolioAssetCatalogItem[]>({
+    queryKey: ["portfolios", "catalog"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PortfolioAssetCatalogItem[]>("/portfolios/catalog")
+      return data
+    },
+    enabled: hydrated && Boolean(accessToken),
     retry: false
   })
 }

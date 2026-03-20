@@ -22,6 +22,10 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 38 70% 48%;
     --radius: 0.75rem;
+    --brand-primary: #f59e0b;
+    --brand-secondary: #22d3ee;
+    --brand-primary-rgb: 245 158 11;
+    --brand-secondary-rgb: 34 211 238;
   }
 
   .dark {
@@ -58,8 +62,8 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 28%),
-      radial-gradient(circle at bottom right, rgba(198, 147, 47, 0.08), transparent 32%);
+      radial-gradient(circle at top left, rgb(var(--brand-secondary-rgb) / 0.12), transparent 28%),
+      radial-gradient(circle at bottom right, rgb(var(--brand-primary-rgb) / 0.12), transparent 32%);
     font-feature-settings: "rlig" 1, "calt" 1;
     overflow-x: clip;
   }
@@ -89,10 +93,18 @@
 
   .input-premium {
     @apply w-full rounded-[1.15rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white placeholder:opacity-30 focus:border-cyan-300/35 focus:bg-white/[0.06];
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+
+  .input-premium:focus {
+    border-color: rgb(var(--brand-secondary-rgb) / 0.35);
+    box-shadow: inset 0 0 0 1px rgb(var(--brand-secondary-rgb) / 0.3);
   }
 
   .action-premium {
     @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-white transition opacity-90 hover:bg-white/[0.08] hover:opacity-100;
+    background-image: linear-gradient(135deg, rgb(var(--brand-secondary-rgb) / 0.12), rgb(var(--brand-primary-rgb) / 0.16));
+    border-color: rgb(var(--brand-secondary-rgb) / 0.18);
   }
 }
 

@@ -12,18 +12,63 @@ from app.services.competitive_intelligence import competitor_service
 
 router = APIRouter(prefix="/competitors", tags=["competitors"])
 
+COMPETITOR_CATALOG = [
+    {
+        "name": "Emaar Properties",
+        "industry": "Real Estate",
+        "sector": "Real Estate",
+        "ticker_symbol": "EMAAR.DU",
+        "market_share_percent": 18.0,
+        "revenue_growth_rate": 13.0,
+        "market_cap": 22_000_000_000,
+        "headquarters": "Dubai",
+        "tags": ["developer", "uae", "residential"],
+        "description": "Dubai market bellwether with broad residential, hospitality, and community exposure.",
+    },
+    {
+        "name": "Aldar Properties",
+        "industry": "Real Estate",
+        "sector": "Real Estate",
+        "ticker_symbol": "ALDAR.AD",
+        "market_share_percent": 15.0,
+        "revenue_growth_rate": 12.0,
+        "market_cap": 19_000_000_000,
+        "headquarters": "Abu Dhabi",
+        "tags": ["developer", "uae", "masterplan"],
+        "description": "Abu Dhabi developer with masterplan communities and institutional-grade delivery profile.",
+    },
+    {
+        "name": "DAMAC Properties",
+        "industry": "Real Estate",
+        "sector": "Real Estate",
+        "ticker_symbol": "DAMAC.DU",
+        "market_share_percent": 9.0,
+        "revenue_growth_rate": 17.0,
+        "market_cap": 9_000_000_000,
+        "headquarters": "Dubai",
+        "tags": ["luxury", "developer"],
+        "description": "Luxury-focused Dubai developer with stronger premium positioning and cyclical sensitivity.",
+    },
+    {
+        "name": "DFM",
+        "industry": "Capital Markets",
+        "sector": "Financial Services",
+        "ticker_symbol": "DFM.DU",
+        "market_share_percent": 27.0,
+        "revenue_growth_rate": 8.0,
+        "market_cap": 6_000_000_000,
+        "headquarters": "Dubai",
+        "tags": ["exchange", "market-infrastructure"],
+        "description": "Dubai market infrastructure player that reflects trading activity and local capital market depth.",
+    },
+]
+
 
 async def _ensure_seeded(db: AsyncSession) -> None:
     existing = await competitor_service.list_competitors(db)
     if existing:
         return
-    defaults = [
-        {"name": "Emaar Properties", "industry": "Real Estate", "sector": "Real Estate", "ticker_symbol": "EMAAR.DU", "market_share_percent": 18.0, "revenue_growth_rate": 13.0, "market_cap": 22_000_000_000, "headquarters": "Dubai", "tags": ["developer", "uae", "residential"]},
-        {"name": "Aldar Properties", "industry": "Real Estate", "sector": "Real Estate", "ticker_symbol": "ALDAR.AD", "market_share_percent": 15.0, "revenue_growth_rate": 12.0, "market_cap": 19_000_000_000, "headquarters": "Abu Dhabi", "tags": ["developer", "uae", "masterplan"]},
-        {"name": "DAMAC Properties", "industry": "Real Estate", "sector": "Real Estate", "ticker_symbol": "DAMAC.DU", "market_share_percent": 9.0, "revenue_growth_rate": 17.0, "market_cap": 9_000_000_000, "headquarters": "Dubai", "tags": ["luxury", "developer"]},
-        {"name": "DFM", "industry": "Capital Markets", "sector": "Financial Services", "ticker_symbol": "DFM.DU", "market_share_percent": 27.0, "revenue_growth_rate": 8.0, "market_cap": 6_000_000_000, "headquarters": "Dubai", "tags": ["exchange", "market-infrastructure"]},
-    ]
-    for payload in defaults:
+    for payload in COMPETITOR_CATALOG:
         await competitor_service.create_competitor(db, **payload)
 
 
@@ -37,6 +82,22 @@ async def list_competitors(
     await _ensure_seeded(db)
     competitors = await competitor_service.list_competitors(db)
     return [CompetitorResponse.model_validate(item) for item in competitors]
+
+
+@router.get("/catalog")
+async def get_competitor_catalog(
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[dict]:
+    del current_user
+    await _ensure_seeded(db)
+    competitors = await competitor_service.list_competitors(db)
+    tracked_names = {item.name for item in competitors}
+    payload: list[dict] = []
+    for item in COMPETITOR_CATALOG:
+        payload.append({**item, "tracked": item["name"] in tracked_names})
+    return payload
 
 
 @router.post("/", response_model=CompetitorResponse)

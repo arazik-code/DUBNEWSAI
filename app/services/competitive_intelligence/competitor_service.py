@@ -18,6 +18,7 @@ from app.models.competitive_intelligence import (
 )
 from app.models.market_data import MarketData
 from app.models.news import NewsArticle
+from app.utils.symbols import display_symbol, normalize_symbol
 
 
 class CompetitorService:
@@ -33,6 +34,10 @@ class CompetitorService:
         return list(result.scalars().unique().all())
 
     async def create_competitor(self, db: AsyncSession, **payload: Any) -> Competitor:
+        existing_result = await db.execute(select(Competitor).where(func.lower(Competitor.name) == payload["name"].lower()))
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            return existing
         competitor = Competitor(**payload)
         db.add(competitor)
         await db.flush()
@@ -424,8 +429,9 @@ class CompetitorService:
 
     async def _seed_competitor_market_context(self, db: AsyncSession, competitor: Competitor) -> None:
         if competitor.ticker_symbol:
+            canonical_symbol = normalize_symbol(competitor.ticker_symbol)
             result = await db.execute(
-                select(MarketData).where(MarketData.symbol == competitor.ticker_symbol).order_by(MarketData.data_timestamp.desc()).limit(60)
+                select(MarketData).where(MarketData.symbol == canonical_symbol).order_by(MarketData.data_timestamp.desc()).limit(60)
             )
             rows = list(result.scalars().all())
             for row in rows:
@@ -445,7 +451,7 @@ class CompetitorService:
 
         terms = [competitor.name.lower()]
         if competitor.ticker_symbol:
-            terms.append(competitor.ticker_symbol.lower().replace(".du", "").replace(".ad", ""))
+            terms.append(normalize_symbol(competitor.ticker_symbol).lower())
         result = await db.execute(
             select(NewsArticle)
             .where(NewsArticle.is_published.is_(True))
@@ -534,7 +540,7 @@ class CompetitorService:
             "name": competitor.name,
             "industry": competitor.industry,
             "sector": competitor.sector,
-            "ticker_symbol": competitor.ticker_symbol,
+            "ticker_symbol": display_symbol(competitor.ticker_symbol),
             "market_cap": competitor.market_cap,
             "revenue_annual": competitor.revenue_annual,
             "revenue_growth_rate": competitor.revenue_growth_rate,

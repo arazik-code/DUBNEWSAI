@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.market_data import EconomicIndicator, MarketData
 from app.models.news import NewsArticle
 from app.models.portfolio import InvestmentRecommendation
+from app.utils.symbols import display_symbol, normalize_symbol, symbol_metadata
 
 
 class InvestmentScoringService:
@@ -23,7 +24,7 @@ class InvestmentScoringService:
         user_risk_profile: str = "moderate",
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        normalized_symbol = symbol.upper()
+        normalized_symbol = normalize_symbol(symbol)
         fundamental_data = await self._get_fundamental_data(db, normalized_symbol)
         technical_data = await self._get_technical_data(db, normalized_symbol)
         sentiment_data = await self._get_sentiment_data(db, normalized_symbol)
@@ -41,7 +42,7 @@ class InvestmentScoringService:
         recommendation = self._generate_recommendation(overall_score, scores, fundamental_data, technical_data, sentiment_data)
 
         payload = {
-            "symbol": normalized_symbol,
+            "symbol": display_symbol(normalized_symbol),
             "overall_score": round(overall_score, 2),
             "component_scores": {key: round(value, 2) for key, value in scores.items()},
             "recommendation": recommendation["action"],
@@ -349,7 +350,7 @@ class InvestmentScoringService:
         recommendation = InvestmentRecommendation(
             user_id=user_id,
             symbol=symbol,
-            asset_name=symbol,
+            asset_name=(symbol_metadata(symbol).name if symbol_metadata(symbol) else symbol),
             recommendation_type=payload["recommendation"],
             confidence_score=85.0 if payload["confidence"] == "High" else 65.0,
             investment_score=payload["overall_score"],

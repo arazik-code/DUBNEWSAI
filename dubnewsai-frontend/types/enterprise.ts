@@ -23,6 +23,20 @@ export interface Competitor {
   updated_at: string
 }
 
+export interface CompetitorCatalogItem {
+  name: string
+  industry?: string | null
+  sector?: string | null
+  headquarters?: string | null
+  ticker_symbol?: string | null
+  market_share_percent?: number | null
+  revenue_growth_rate?: number | null
+  market_cap?: number | null
+  tags?: string[] | null
+  description?: string | null
+  tracked: boolean
+}
+
 export interface CompetitorAnalysis {
   competitor: Record<string, unknown>
   swot_analysis: {
@@ -94,6 +108,29 @@ export interface PricePrediction {
   }
   generated_at?: string
   error?: string
+}
+
+export interface PredictionUniverseSymbol {
+  symbol: string
+  canonical_symbol: string
+  name: string
+  exchange?: string | null
+  sector?: string | null
+  price: number
+  change_percent: number
+}
+
+export interface PredictionUniverseLocation {
+  name: string
+  price_per_sqft: number
+  trend_percent: number
+  supported_types: string[]
+}
+
+export interface PredictionUniverseResponse {
+  symbols: PredictionUniverseSymbol[]
+  locations: PredictionUniverseLocation[]
+  property_types: string[]
 }
 
 export interface MarketTrendPrediction {
@@ -202,6 +239,13 @@ export interface TeamActivity {
   metadata: Record<string, unknown>
   created_at: string
   user?: { id: number; full_name?: string | null; email: string } | null
+}
+
+export interface TeamDirectoryUser {
+  id: number
+  full_name?: string | null
+  email: string
+  role: string
 }
 
 export interface ApiKeyRecord {

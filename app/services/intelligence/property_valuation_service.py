@@ -13,6 +13,89 @@ from app.models.news import NewsArticle
 class PropertyValuationService:
     """Deterministic valuation and ROI tooling tuned for current Dubai/UAE product needs."""
 
+    LOCATION_PROFILES: dict[str, dict[str, Any]] = {
+        "Dubai Marina": {
+            "supported_types": ["Apartment", "Penthouse", "Duplex"],
+            "default_area_sqft": 1350,
+            "default_bedrooms": 2,
+            "default_year_built": 2020,
+            "default_amenities": ["Pool", "Gym", "Sea View", "Parking"],
+            "monthly_rent": 16500,
+            "monthly_expenses": 2200,
+            "appreciation_rate": 0.055,
+        },
+        "Downtown Dubai": {
+            "supported_types": ["Apartment", "Penthouse"],
+            "default_area_sqft": 1280,
+            "default_bedrooms": 2,
+            "default_year_built": 2019,
+            "default_amenities": ["Pool", "Gym", "Smart Home", "Parking"],
+            "monthly_rent": 18250,
+            "monthly_expenses": 2400,
+            "appreciation_rate": 0.058,
+        },
+        "Palm Jumeirah": {
+            "supported_types": ["Apartment", "Villa", "Penthouse"],
+            "default_area_sqft": 1780,
+            "default_bedrooms": 3,
+            "default_year_built": 2021,
+            "default_amenities": ["Beach Access", "Private Pool", "Sea View", "Parking"],
+            "monthly_rent": 26500,
+            "monthly_expenses": 3800,
+            "appreciation_rate": 0.064,
+        },
+        "Business Bay": {
+            "supported_types": ["Apartment", "Duplex"],
+            "default_area_sqft": 1160,
+            "default_bedrooms": 1,
+            "default_year_built": 2020,
+            "default_amenities": ["Pool", "Gym", "Smart Home", "Parking"],
+            "monthly_rent": 12800,
+            "monthly_expenses": 1850,
+            "appreciation_rate": 0.051,
+        },
+        "Dubai Hills": {
+            "supported_types": ["Apartment", "Townhouse", "Villa"],
+            "default_area_sqft": 1680,
+            "default_bedrooms": 3,
+            "default_year_built": 2022,
+            "default_amenities": ["Golf View", "Gym", "Study", "Parking"],
+            "monthly_rent": 17100,
+            "monthly_expenses": 2450,
+            "appreciation_rate": 0.053,
+        },
+        "Jumeirah Village Circle": {
+            "supported_types": ["Apartment", "Townhouse"],
+            "default_area_sqft": 1180,
+            "default_bedrooms": 2,
+            "default_year_built": 2021,
+            "default_amenities": ["Pool", "Gym", "Parking", "Smart Home"],
+            "monthly_rent": 8600,
+            "monthly_expenses": 1450,
+            "appreciation_rate": 0.047,
+        },
+        "Dubai Creek Harbour": {
+            "supported_types": ["Apartment", "Penthouse"],
+            "default_area_sqft": 1240,
+            "default_bedrooms": 2,
+            "default_year_built": 2023,
+            "default_amenities": ["Pool", "Gym", "Sea View", "Parking"],
+            "monthly_rent": 13800,
+            "monthly_expenses": 1950,
+            "appreciation_rate": 0.054,
+        },
+        "Yas Island": {
+            "supported_types": ["Apartment", "Townhouse", "Villa"],
+            "default_area_sqft": 1520,
+            "default_bedrooms": 3,
+            "default_year_built": 2021,
+            "default_amenities": ["Pool", "Gym", "Parking", "Private Garden"],
+            "monthly_rent": 12100,
+            "monthly_expenses": 1800,
+            "appreciation_rate": 0.049,
+        },
+    }
+
     LOCATION_BASELINES: dict[str, float] = {
         "downtown dubai": 2550,
         "dubai marina": 2350,
@@ -51,6 +134,70 @@ class PropertyValuationService:
         "smart home": 0.012,
         "parking": 0.01,
     }
+
+    def get_supported_locations(self) -> list[str]:
+        return list(self.LOCATION_PROFILES.keys())
+
+    def get_supported_property_types(self, location: str | None = None) -> list[str]:
+        if location and location in self.LOCATION_PROFILES:
+            return self.LOCATION_PROFILES[location]["supported_types"]
+        return ["Apartment", "Villa", "Townhouse", "Penthouse", "Duplex"]
+
+    async def get_property_options(self, db: AsyncSession) -> dict[str, Any]:
+        locations: list[dict[str, Any]] = []
+        for location, profile in self.LOCATION_PROFILES.items():
+            trend = await self._get_market_trend(db, location)
+            locations.append(
+                {
+                    "name": location,
+                    "price_per_sqft": round(self._baseline_price_per_sqft(location), 2),
+                    "trend_percent": round(trend * 100, 2),
+                    "supported_types": profile["supported_types"],
+                }
+            )
+
+        return {
+            "locations": locations,
+            "property_types": self.get_supported_property_types(),
+            "amenities": list(self.AMENITY_WEIGHTS.keys()),
+        }
+
+    async def get_property_preset(self, db: AsyncSession | None, *, location: str, property_type: str) -> dict[str, Any]:
+        normalized_location = location if location in self.LOCATION_PROFILES else self.get_supported_locations()[0]
+        profile = self.LOCATION_PROFILES[normalized_location]
+        chosen_type = property_type if property_type in profile["supported_types"] else profile["supported_types"][0]
+        type_multiplier = self.TYPE_MULTIPLIERS.get(chosen_type.lower(), 1.0)
+        area_sqft = round(profile["default_area_sqft"] * (1.18 if chosen_type.lower() in {"villa", "penthouse"} else 1.0), 0)
+        bedrooms = profile["default_bedrooms"] + (1 if chosen_type.lower() in {"villa", "penthouse"} else 0)
+        price_per_sqft = self._baseline_price_per_sqft(normalized_location) * type_multiplier
+        purchase_price = round(area_sqft * price_per_sqft, 2)
+        market_trend = await self._get_market_trend(db, normalized_location) if db is not None else 0.03
+        rental_income = round(profile["monthly_rent"] * (1.22 if chosen_type.lower() in {"villa", "penthouse"} else 1.0), 2)
+        expenses = round(profile["monthly_expenses"] * (1.18 if chosen_type.lower() in {"villa", "penthouse"} else 1.0), 2)
+
+        return {
+            "location": normalized_location,
+            "property_type": chosen_type,
+            "valuation_defaults": {
+                "location": normalized_location,
+                "property_type": chosen_type,
+                "area_sqft": area_sqft,
+                "bedrooms": bedrooms,
+                "year_built": profile["default_year_built"],
+                "amenities": profile["default_amenities"],
+            },
+            "roi_defaults": {
+                "purchase_price": purchase_price,
+                "rental_income_monthly": rental_income,
+                "expenses_monthly": expenses,
+                "appreciation_rate": profile["appreciation_rate"],
+            },
+            "market_context": {
+                "baseline_price_per_sqft": round(price_per_sqft, 2),
+                "market_trend_percent": round(market_trend * 100, 2),
+                "supported_types": profile["supported_types"],
+            },
+        }
 
     async def estimate_property_value(
         self,

@@ -1,6 +1,6 @@
 "use client"
 
-import { type ReactNode, useMemo, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Building2, Plus, Share2, Users2, Workflow } from "lucide-react"
 
@@ -8,19 +8,41 @@ import { AuthGuard } from "@/components/auth/AuthGuard"
 import { ActionStatus } from "@/components/shared/ActionStatus"
 import { PremiumPageHero } from "@/components/ui/premium-page-hero"
 import { apiClient } from "@/lib/api/client"
-import { useTeamActivity, useTeams } from "@/lib/hooks/useEnterprise"
+import { useTeamActivity, useTeamDirectory, useTeams } from "@/lib/hooks/useEnterprise"
+import { usePortfolios, useWatchlists } from "@/lib/hooks/usePortfolio"
 import { formatDateTime, titleCase } from "@/lib/utils/formatters"
 
 export default function TeamsPage() {
   const queryClient = useQueryClient()
   const { data: teams = [] } = useTeams()
+  const { data: portfolios = [] } = usePortfolios()
+  const { data: watchlists = [] } = useWatchlists()
+  const { data: directory = [] } = useTeamDirectory()
   const [selectedId, setSelectedId] = useState<number | undefined>(undefined)
   const [teamForm, setTeamForm] = useState({ name: "Dubai Strategy Cell", description: "Shared command room for investment, research, and strategy." })
-  const [memberForm, setMemberForm] = useState({ user_id: 1, role: "member" })
-  const [shareForm, setShareForm] = useState({ item_type: "portfolio", item_id: 1, item_name: "Dubai Growth Sleeve", description: "Shared with the strategy cell for review." })
+  const [memberForm, setMemberForm] = useState({ user_id: 0, role: "member" })
+  const [shareForm, setShareForm] = useState({ item_type: "portfolio", item_id: 0, item_name: "", description: "Shared with the strategy cell for review." })
 
   const selected = useMemo(() => teams.find((item) => item.id === selectedId) || teams[0], [teams, selectedId])
+  const shareableItems = useMemo(() => {
+    if (shareForm.item_type === "watchlist") {
+      return watchlists.map((item) => ({ id: item.id, name: item.name }))
+    }
+    return portfolios.map((item) => ({ id: item.id, name: item.name }))
+  }, [portfolios, shareForm.item_type, watchlists])
   const { data: activity = [] } = useTeamActivity(selected?.id)
+
+  useEffect(() => {
+    if (memberForm.user_id === 0 && directory[0]) {
+      setMemberForm((current) => ({ ...current, user_id: directory[0].id }))
+    }
+  }, [directory, memberForm.user_id])
+
+  useEffect(() => {
+    if (shareableItems[0] && (shareForm.item_id === 0 || !shareableItems.some((item) => item.id === shareForm.item_id))) {
+      setShareForm((current) => ({ ...current, item_id: shareableItems[0].id, item_name: shareableItems[0].name }))
+    }
+  }, [shareForm.item_id, shareableItems])
 
   const createTeam = useMutation({
     mutationFn: async () => {
@@ -132,8 +154,14 @@ export default function TeamsPage() {
                   <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
                     <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Add member</div>
                     <div className="mt-4 grid gap-4">
-                      <Field label="User id">
-                        <input type="number" className="input-premium" value={memberForm.user_id} onChange={(event) => setMemberForm((current) => ({ ...current, user_id: Number(event.target.value) }))} />
+                      <Field label="Team member">
+                        <select className="input-premium" value={memberForm.user_id} onChange={(event) => setMemberForm((current) => ({ ...current, user_id: Number(event.target.value) }))}>
+                          {directory.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {(item.full_name || item.email) + " - " + item.role}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
                       <Field label="Role">
                         <select className="input-premium" value={memberForm.role} onChange={(event) => setMemberForm((current) => ({ ...current, role: event.target.value }))}>
@@ -143,7 +171,7 @@ export default function TeamsPage() {
                         </select>
                       </Field>
                     </div>
-                    <button onClick={() => addMember.mutate()} className="action-premium mt-5" disabled={addMember.isPending}>
+                    <button onClick={() => addMember.mutate()} className="action-premium mt-5" disabled={addMember.isPending || !directory.length}>
                       <Users2 className="h-4 w-4" />
                       {addMember.isPending ? "Adding..." : "Add member"}
                     </button>
@@ -162,18 +190,30 @@ export default function TeamsPage() {
                         <select className="input-premium" value={shareForm.item_type} onChange={(event) => setShareForm((current) => ({ ...current, item_type: event.target.value }))}>
                           <option value="portfolio">Portfolio</option>
                           <option value="watchlist">Watchlist</option>
-                          <option value="insight">Insight</option>
-                          <option value="report">Report</option>
                         </select>
                       </Field>
-                      <Field label="Item id">
-                        <input type="number" className="input-premium" value={shareForm.item_id} onChange={(event) => setShareForm((current) => ({ ...current, item_id: Number(event.target.value) }))} />
-                      </Field>
-                      <Field label="Item name">
-                        <input className="input-premium" value={shareForm.item_name} onChange={(event) => setShareForm((current) => ({ ...current, item_name: event.target.value }))} />
+                      <Field label="Shareable item">
+                        <select
+                          className="input-premium"
+                          value={shareForm.item_id}
+                          onChange={(event) => {
+                            const item = shareableItems.find((candidate) => candidate.id === Number(event.target.value))
+                            setShareForm((current) => ({
+                              ...current,
+                              item_id: Number(event.target.value),
+                              item_name: item?.name || current.item_name
+                            }))
+                          }}
+                        >
+                          {shareableItems.map((item) => (
+                            <option key={`${shareForm.item_type}-${item.id}`} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
                     </div>
-                    <button onClick={() => shareItem.mutate()} className="action-premium mt-5" disabled={shareItem.isPending}>
+                    <button onClick={() => shareItem.mutate()} className="action-premium mt-5" disabled={shareItem.isPending || !shareableItems.length}>
                       <Share2 className="h-4 w-4" />
                       {shareItem.isPending ? "Sharing..." : "Share into team"}
                     </button>

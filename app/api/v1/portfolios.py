@@ -36,6 +36,16 @@ async def list_portfolios(
     return [PortfolioResponse.model_validate(item) for item in portfolios]
 
 
+@router.get("/catalog")
+async def get_portfolio_asset_catalog(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[dict]:
+    del current_user
+    return await portfolio_service.get_asset_catalog(db)
+
+
 @router.post("/", response_model=PortfolioResponse)
 async def create_portfolio(
     payload: PortfolioCreateRequest,

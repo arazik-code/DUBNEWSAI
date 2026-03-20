@@ -89,3 +89,14 @@ export interface InvestmentScore {
   time_horizon: string
   generated_at: string
 }
+
+export interface PortfolioAssetCatalogItem {
+  symbol: string
+  canonical_symbol: string
+  name: string
+  sector: string
+  price: number
+  change_percent: number
+  exchange?: string | null
+  currency: string
+}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Bell, Building2, KeyRound, Palette, ShieldCheck, SlidersHorizontal, Waves, Workflow } from "lucide-react"
+import { useTheme } from "next-themes"
 
 import { AuthGuard } from "@/components/auth/AuthGuard"
 import { ActionStatus } from "@/components/shared/ActionStatus"
@@ -15,8 +16,18 @@ import { useNotifications } from "@/lib/hooks/useNotifications"
 import { useNotificationStore } from "@/lib/store/notificationStore"
 import { formatDateTime, titleCase } from "@/lib/utils/formatters"
 
+const FEATURE_OPTIONS = [
+  { id: "portfolio", label: "Portfolio suite" },
+  { id: "analytics", label: "Analytics" },
+  { id: "news", label: "News intelligence" },
+  { id: "competitors", label: "Competitor center" },
+  { id: "executive", label: "Executive command" },
+  { id: "teams", label: "Team collaboration" }
+]
+
 export default function SettingsPage() {
   const queryClient = useQueryClient()
+  const { theme, setTheme } = useTheme()
   const { user } = useAuth()
   const { data: notifications, isLoading, markRead, markAllRead, markingAllRead } = useNotifications()
   const { data: apiKeys = [] } = useApiKeys()
@@ -31,18 +42,25 @@ export default function SettingsPage() {
     secondary_color: whiteLabel?.secondary_color || "#f59e0b",
     custom_domain: whiteLabel?.custom_domain || "",
     subdomain: whiteLabel?.subdomain || "",
-    enabled_features: (whiteLabel?.enabled_features || ["portfolio", "analytics", "news"]).join(", "),
+    enabled_features: whiteLabel?.enabled_features || ["portfolio", "analytics", "news"],
     api_enabled: whiteLabel?.api_enabled ?? true,
     api_rate_limit: whiteLabel?.api_rate_limit || 250,
     is_active: whiteLabel?.is_active ?? true
   })
   const [plaintextKey, setPlaintextKey] = useState<string | null>(null)
+  const [themeMode, setThemeMode] = useState("dark")
 
   useEffect(() => {
     if (notifications?.length) {
       hydrateNotifications(notifications)
     }
   }, [hydrateNotifications, notifications])
+
+  useEffect(() => {
+    if (theme) {
+      setThemeMode(theme)
+    }
+  }, [theme])
 
   useEffect(() => {
     if (whiteLabel) {
@@ -53,13 +71,27 @@ export default function SettingsPage() {
         secondary_color: whiteLabel.secondary_color || "#f59e0b",
         custom_domain: whiteLabel.custom_domain || "",
         subdomain: whiteLabel.subdomain || "",
-        enabled_features: (whiteLabel.enabled_features || ["portfolio", "analytics", "news"]).join(", "),
+        enabled_features: whiteLabel.enabled_features || ["portfolio", "analytics", "news"],
         api_enabled: whiteLabel.api_enabled,
         api_rate_limit: whiteLabel.api_rate_limit,
         is_active: whiteLabel.is_active
       })
     }
   }, [whiteLabel])
+
+  useEffect(() => {
+    applyBrandPreview(whiteLabelForm.primary_color, whiteLabelForm.secondary_color)
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "dubnewsai-brand-preview",
+        JSON.stringify({
+          primary_color: whiteLabelForm.primary_color,
+          secondary_color: whiteLabelForm.secondary_color,
+          enabled_features: whiteLabelForm.enabled_features
+        })
+      )
+    }
+  }, [whiteLabelForm.enabled_features, whiteLabelForm.primary_color, whiteLabelForm.secondary_color])
 
   const createApiKey = useMutation({
     mutationFn: async () => {
@@ -77,9 +109,6 @@ export default function SettingsPage() {
       await apiClient.put("/settings/white-label", {
         ...whiteLabelForm,
         enabled_features: whiteLabelForm.enabled_features
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
       })
     },
     onSuccess: async () => {
@@ -255,11 +284,17 @@ export default function SettingsPage() {
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Primary color</div>
-                  <input className="input-premium" value={whiteLabelForm.primary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value }))} />
+                  <div className="flex items-center gap-3">
+                    <input type="color" className="h-12 w-16 rounded-xl border border-white/10 bg-transparent" value={whiteLabelForm.primary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value }))} />
+                    <input className="input-premium" value={whiteLabelForm.primary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value }))} />
+                  </div>
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Secondary color</div>
-                  <input className="input-premium" value={whiteLabelForm.secondary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value }))} />
+                  <div className="flex items-center gap-3">
+                    <input type="color" className="h-12 w-16 rounded-xl border border-white/10 bg-transparent" value={whiteLabelForm.secondary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value }))} />
+                    <input className="input-premium" value={whiteLabelForm.secondary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value }))} />
+                  </div>
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Custom domain</div>
@@ -269,15 +304,86 @@ export default function SettingsPage() {
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Subdomain</div>
                   <input className="input-premium" value={whiteLabelForm.subdomain} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, subdomain: event.target.value }))} />
                 </label>
-                <label className="block md:col-span-2">
-                  <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Enabled features</div>
-                  <input className="input-premium" value={whiteLabelForm.enabled_features} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, enabled_features: event.target.value }))} />
+                <label className="block">
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Theme mode</div>
+                  <select
+                    className="input-premium"
+                    value={themeMode}
+                    onChange={(event) => {
+                      setThemeMode(event.target.value)
+                      setTheme(event.target.value)
+                    }}
+                  >
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="system">System</option>
+                  </select>
                 </label>
+                <label className="block">
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">API rate limit</div>
+                  <input
+                    type="number"
+                    className="input-premium"
+                    value={whiteLabelForm.api_rate_limit}
+                    onChange={(event) => setWhiteLabelForm((current) => ({ ...current, api_rate_limit: Number(event.target.value) }))}
+                  />
+                </label>
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Feature access</div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {FEATURE_OPTIONS.map((feature) => {
+                      const checked = whiteLabelForm.enabled_features.includes(feature.id)
+                      return (
+                        <label key={feature.id} className="flex items-center gap-3 rounded-[1rem] border border-white/10 px-3 py-3 text-sm text-white/70">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setWhiteLabelForm((current) => ({
+                                ...current,
+                                enabled_features: checked
+                                  ? current.enabled_features.filter((item) => item !== feature.id)
+                                  : [...current.enabled_features, feature.id]
+                              }))
+                            }
+                          />
+                          {feature.label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Delivery controls</div>
+                  <div className="mt-4 space-y-3 text-sm text-white/70">
+                    <label className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={whiteLabelForm.api_enabled}
+                        onChange={(event) => setWhiteLabelForm((current) => ({ ...current, api_enabled: event.target.checked }))}
+                      />
+                      Enable public API access
+                    </label>
+                    <label className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={whiteLabelForm.is_active}
+                        onChange={(event) => setWhiteLabelForm((current) => ({ ...current, is_active: event.target.checked }))}
+                      />
+                      Keep white-label profile active
+                    </label>
+                  </div>
+                </div>
               </div>
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 <ControlPill icon={Palette} label="Brand mode" value={whiteLabelForm.is_active ? "Active" : "Paused"} />
                 <ControlPill icon={KeyRound} label="API layer" value={whiteLabelForm.api_enabled ? "Enabled" : "Disabled"} />
                 <ControlPill icon={Workflow} label="Rate limit" value={`${whiteLabelForm.api_rate_limit}/hr`} />
+              </div>
+              <div className="mt-6 rounded-[1.5rem] border border-white/10 p-5" style={{ backgroundImage: `linear-gradient(135deg, ${whiteLabelForm.primary_color}22, ${whiteLabelForm.secondary_color}22)` }}>
+                <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Live preview</div>
+                <div className="mt-3 text-lg font-semibold text-white">{whiteLabelForm.company_name}</div>
+                <p className="mt-2 text-sm text-white/58">Theme, color, and feature settings now preview immediately in the UI before you save.</p>
               </div>
               <button type="button" onClick={() => saveWhiteLabel.mutate()} className="action-premium mt-6" disabled={saveWhiteLabel.isPending}>
                 <Palette className="h-4 w-4" />
@@ -295,6 +401,28 @@ export default function SettingsPage() {
       </div>
     </AuthGuard>
   )
+}
+
+function hexToRgbChannels(hex: string) {
+  const sanitized = hex.replace("#", "")
+  const normalized = sanitized.length === 3 ? sanitized.split("").map((char) => char + char).join("") : sanitized
+  const numeric = Number.parseInt(normalized, 16)
+  const red = (numeric >> 16) & 255
+  const green = (numeric >> 8) & 255
+  const blue = numeric & 255
+  return `${red} ${green} ${blue}`
+}
+
+function applyBrandPreview(primary: string, secondary: string) {
+  if (typeof document === "undefined") {
+    return
+  }
+
+  const root = document.documentElement
+  root.style.setProperty("--brand-primary", primary)
+  root.style.setProperty("--brand-secondary", secondary)
+  root.style.setProperty("--brand-primary-rgb", hexToRgbChannels(primary))
+  root.style.setProperty("--brand-secondary-rgb", hexToRgbChannels(secondary))
 }
 
 function ProfileRow({ label, value }: { label: string; value: string }) {

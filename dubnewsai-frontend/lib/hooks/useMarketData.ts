@@ -9,6 +9,8 @@ import type {
   MarketIntelligenceResponse,
   MarketOverviewResponse,
   MarketStock,
+  PropertyValuationOptionsResponse,
+  PropertyValuationPresetResponse,
   PropertyValuationResponse,
   ROIResponse,
   WeatherSnapshot
@@ -82,3 +84,29 @@ export function useMarketIntelligence(region = "UAE") {
 export type PropertyValuationApi = PropertyValuationResponse
 export type PropertyRoiApi = ROIResponse
 export type PropertyCmaApi = ComparativeAnalysisResponse
+
+export function usePropertyValuationOptions() {
+  return useQuery<PropertyValuationOptionsResponse>({
+    queryKey: ["market", "property-valuation", "options"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PropertyValuationOptionsResponse>("/market/property-valuation/options")
+      return data
+    }
+  })
+}
+
+export function usePropertyValuationPreset(location?: string, propertyType = "Apartment") {
+  return useQuery<PropertyValuationPresetResponse>({
+    queryKey: ["market", "property-valuation", "preset", location, propertyType],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PropertyValuationPresetResponse>("/market/property-valuation/preset", {
+        params: {
+          location,
+          property_type: propertyType
+        }
+      })
+      return data
+    },
+    enabled: Boolean(location)
+  })
+}

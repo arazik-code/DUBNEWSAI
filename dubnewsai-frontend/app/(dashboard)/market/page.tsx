@@ -1,26 +1,56 @@
 "use client"
 
-import { useDeferredValue, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { BrainCircuit, Radar, TrendingUp } from "lucide-react"
 
 import { LiveTicker } from "@/components/dashboard/LiveTicker"
 import { MarketOverview } from "@/components/dashboard/MarketOverview"
 import { PropertyValuationStudio } from "@/components/intelligence/PropertyValuationStudio"
 import { PremiumPageHero } from "@/components/ui/premium-page-hero"
-import { useMarketTrend, usePricePrediction, usePropertyTrend } from "@/lib/hooks/useEnterprise"
+import { useMarketTrend, usePredictionUniverse, usePricePrediction, usePropertyTrend } from "@/lib/hooks/useEnterprise"
 import { formatCompactCurrency, titleCase } from "@/lib/utils/formatters"
 
 export default function MarketPage() {
-  const [predictionSymbol, setPredictionSymbol] = useState("EMAAR.DU")
-  const [predictionLocation, setPredictionLocation] = useState("Dubai Marina")
+  const { data: predictionUniverse } = usePredictionUniverse()
+  const [predictionSymbol, setPredictionSymbol] = useState("")
+  const [predictionLocation, setPredictionLocation] = useState("")
+  const [predictionPropertyType, setPredictionPropertyType] = useState("Apartment")
   const deferredPredictionSymbol = useDeferredValue(predictionSymbol.trim())
   const deferredPredictionLocation = useDeferredValue(predictionLocation.trim())
   const { data: pricePrediction, isLoading: isPricePredictionLoading, error: pricePredictionError } = usePricePrediction(deferredPredictionSymbol)
   const { data: marketTrend } = useMarketTrend("UAE")
   const { data: propertyTrend, isLoading: isPropertyTrendLoading, error: propertyTrendError } = usePropertyTrend(
     deferredPredictionLocation,
-    "apartment"
+    predictionPropertyType
   )
+  const selectedSymbol = useMemo(
+    () => predictionUniverse?.symbols.find((item) => item.symbol === predictionSymbol) || predictionUniverse?.symbols[0],
+    [predictionSymbol, predictionUniverse?.symbols]
+  )
+  const selectedLocation = useMemo(
+    () => predictionUniverse?.locations.find((item) => item.name === predictionLocation) || predictionUniverse?.locations[0],
+    [predictionLocation, predictionUniverse?.locations]
+  )
+
+  useEffect(() => {
+    if (!predictionSymbol && predictionUniverse?.symbols?.length) {
+      setPredictionSymbol(predictionUniverse.symbols[0].symbol)
+    }
+  }, [predictionSymbol, predictionUniverse?.symbols])
+
+  useEffect(() => {
+    if (!predictionLocation && predictionUniverse?.locations?.length) {
+      setPredictionLocation(predictionUniverse.locations[0].name)
+      setPredictionPropertyType(predictionUniverse.locations[0].supported_types[0] || "Apartment")
+    }
+  }, [predictionLocation, predictionUniverse?.locations])
+
+  useEffect(() => {
+    if (selectedLocation && !selectedLocation.supported_types.includes(predictionPropertyType)) {
+      setPredictionPropertyType(selectedLocation.supported_types[0] || "Apartment")
+    }
+  }, [predictionPropertyType, selectedLocation])
+
   const targetPrice = pricePrediction?.prediction?.target_price
   const expectedReturn = pricePrediction?.prediction?.expected_return_percent
   const confidenceFit = pricePrediction?.model_info?.r_squared
@@ -67,7 +97,13 @@ export default function MarketPage() {
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <label className="block">
               <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Symbol</div>
-              <input className="input-premium" value={predictionSymbol} onChange={(event) => setPredictionSymbol(event.target.value.toUpperCase())} />
+              <select className="input-premium" value={predictionSymbol} onChange={(event) => setPredictionSymbol(event.target.value)}>
+                {(predictionUniverse?.symbols || []).map((item) => (
+                  <option key={item.symbol} value={item.symbol}>
+                    {item.symbol} - {item.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
               <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-white/38">
@@ -76,6 +112,11 @@ export default function MarketPage() {
               </div>
               <div className="mt-3 text-xl font-semibold text-white">{titleCase(marketTrend?.prediction || "pending")}</div>
               <p className="mt-3 text-sm leading-7 text-white/56">{marketTrend?.recommendation || "Generating outlook..."}</p>
+              {selectedSymbol ? (
+                <div className="mt-4 text-xs text-white/48">
+                  {selectedSymbol.exchange || "Exchange"} · {selectedSymbol.sector || "Sector"} · {formatCompactCurrency(selectedSymbol.price, "AED")} · {selectedSymbol.change_percent.toFixed(2)}%
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -101,10 +142,28 @@ export default function MarketPage() {
         <article className="panel-premium p-6 sm:p-8">
           <p className="story-kicker">Property trend</p>
           <h2 className="mt-4 text-3xl font-semibold text-white">Location-level appreciation outlook</h2>
-          <label className="mt-6 block">
-            <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Location</div>
-            <input className="input-premium" value={predictionLocation} onChange={(event) => setPredictionLocation(event.target.value)} />
-          </label>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Location</div>
+              <select className="input-premium" value={predictionLocation} onChange={(event) => setPredictionLocation(event.target.value)}>
+                {(predictionUniverse?.locations || []).map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Property type</div>
+              <select className="input-premium" value={predictionPropertyType} onChange={(event) => setPredictionPropertyType(event.target.value)}>
+                {(selectedLocation?.supported_types || predictionUniverse?.property_types || []).map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <ForecastTile
               label="Current average"
@@ -121,9 +180,14 @@ export default function MarketPage() {
             <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Trend narrative</div>
             <p className="mt-3 text-sm leading-7 text-white/58">
               {propertyTrend?.forecast_12m && propertyTrend?.data_quality
-                ? `${predictionLocation} is screening as ${propertyTrend.forecast_12m.trend} with ${propertyTrend.confidence} confidence and ${propertyTrend.data_quality.data_points} historical points supporting the estimate.`
+                ? `${predictionLocation} ${predictionPropertyType.toLowerCase()} values are screening as ${propertyTrend.forecast_12m.trend} with ${propertyTrend.confidence} confidence and ${propertyTrend.data_quality.data_points} historical points supporting the estimate.`
                 : "Enter a location to generate the property trend outlook."}
             </p>
+            {selectedLocation ? (
+              <div className="mt-4 text-xs text-white/48">
+                Current baseline {formatCompactCurrency(selectedLocation.price_per_sqft, "AED")} / sqft · 30-day location trend {selectedLocation.trend_percent.toFixed(2)}%
+              </div>
+            ) : null}
           </div>
           {propertyTrendError ? <p className="mt-4 text-sm text-rose-300">Property trend unavailable for this location yet.</p> : null}
         </article>

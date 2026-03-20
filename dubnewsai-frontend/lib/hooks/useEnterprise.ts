@@ -6,12 +6,15 @@ import { apiClient } from "@/lib/api/client"
 import { useAuthStore } from "@/lib/store/authStore"
 import type {
   ApiKeyRecord,
+  CompetitorCatalogItem,
   Competitor,
   CompetitorAnalysis,
   ExecutiveDashboard,
   MarketTrendPrediction,
+  PredictionUniverseResponse,
   PricePrediction,
   PropertyTrendPrediction,
+  TeamDirectoryUser,
   Team,
   TeamActivity,
   WhiteLabelConfig
@@ -22,6 +25,16 @@ export function useCompetitors() {
     queryKey: ["competitors"],
     queryFn: async () => {
       const { data } = await apiClient.get<Competitor[]>("/competitors")
+      return data
+    }
+  })
+}
+
+export function useCompetitorCatalog() {
+  return useQuery<CompetitorCatalogItem[]>({
+    queryKey: ["competitors", "catalog"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<CompetitorCatalogItem[]>("/competitors/catalog")
       return data
     }
   })
@@ -46,6 +59,16 @@ export function usePricePrediction(symbol?: string, daysAhead = 30) {
       return data
     },
     enabled: Boolean(symbol)
+  })
+}
+
+export function usePredictionUniverse() {
+  return useQuery<PredictionUniverseResponse>({
+    queryKey: ["predictions", "options"],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PredictionUniverseResponse>("/predictions/options")
+      return data
+    }
   })
 }
 
@@ -110,6 +133,20 @@ export function useTeamActivity(teamId?: number) {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && Boolean(teamId),
+    retry: false
+  })
+}
+
+export function useTeamDirectory(query = "") {
+  const { accessToken, hydrated } = useAuthStore()
+
+  return useQuery<TeamDirectoryUser[]>({
+    queryKey: ["teams", "directory", query],
+    queryFn: async () => {
+      const { data } = await apiClient.get<TeamDirectoryUser[]>("/teams/directory", { params: { query } })
+      return data
+    },
+    enabled: hydrated && Boolean(accessToken),
     retry: false
   })
 }

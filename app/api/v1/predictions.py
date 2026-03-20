@@ -35,6 +35,17 @@ async def get_price_prediction(
     return payload
 
 
+@router.get("/options")
+async def get_prediction_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> dict:
+    del current_user
+    _ensure_enabled()
+    return await forecast_service.get_prediction_universe(db)
+
+
 @router.get("/market-trend")
 async def get_market_trend_prediction(
     region: str = Query(default="UAE"),

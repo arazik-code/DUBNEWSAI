@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import or_, select
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,23 @@ async def list_teams(
     _ensure_enabled()
     teams = await team_service.list_teams_for_user(db, user_id=current_user.id)
     return [TeamResponse.model_validate(item) for item in teams]
+
+
+@router.get("/directory")
+async def get_team_directory(
+    query: str = "",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[dict]:
+    _ensure_enabled()
+    statement = select(User).where(User.id != current_user.id, User.is_active.is_(True)).order_by(User.full_name.asc().nullslast(), User.email.asc()).limit(20)
+    if query.strip():
+        like_query = f"%{query.strip()}%"
+        statement = statement.where(or_(User.email.ilike(like_query), User.full_name.ilike(like_query)))
+    result = await db.execute(statement)
+    users = result.scalars().all()
+    return [{"id": item.id, "full_name": item.full_name, "email": item.email, "role": item.role.value} for item in users]
 
 
 @router.post("/", response_model=TeamResponse)

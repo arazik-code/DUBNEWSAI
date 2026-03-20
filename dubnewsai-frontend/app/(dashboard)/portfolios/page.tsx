@@ -9,15 +9,17 @@ import { AuthGuard } from "@/components/auth/AuthGuard"
 import { ActionStatus } from "@/components/shared/ActionStatus"
 import { PremiumPageHero } from "@/components/ui/premium-page-hero"
 import { apiClient } from "@/lib/api/client"
-import { useInvestmentScore, usePortfolioAnalytics, usePortfolios, useWatchlists } from "@/lib/hooks/usePortfolio"
+import { useInvestmentScore, usePortfolioAnalytics, usePortfolioAssetCatalog, usePortfolios, useWatchlists } from "@/lib/hooks/usePortfolio"
 import { formatCompactCurrency, formatDateTime } from "@/lib/utils/formatters"
 
 export default function PortfoliosPage() {
   const queryClient = useQueryClient()
   const { data: portfolios = [] } = usePortfolios()
   const { data: watchlists = [] } = useWatchlists()
+  const { data: assetCatalog = [] } = usePortfolioAssetCatalog()
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | undefined>(undefined)
-  const [scoreSymbol, setScoreSymbol] = useState("EMAAR.DU")
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState<number | undefined>(undefined)
+  const [scoreSymbol, setScoreSymbol] = useState("")
   const [riskProfile, setRiskProfile] = useState("moderate")
   const [portfolioForm, setPortfolioForm] = useState({
     name: "Dubai Growth Sleeve",
@@ -26,9 +28,9 @@ export default function PortfoliosPage() {
     base_currency: "AED"
   })
   const [transactionForm, setTransactionForm] = useState({
-    symbol: "EMAAR.DU",
+    symbol: "",
     quantity: 120,
-    price: 13.4,
+    price: 0,
     transaction_type: "buy",
     fees: 8,
     transaction_date: ""
@@ -38,11 +40,11 @@ export default function PortfoliosPage() {
     description: "Names to monitor for entries and follow-through"
   })
   const [watchlistItemForm, setWatchlistItemForm] = useState({
-    symbol: "ALDAR.AD",
+    symbol: "",
     asset_type: "stock",
-    asset_name: "Aldar Properties",
-    target_buy_price: 7.8,
-    target_sell_price: 9.4,
+    asset_name: "",
+    target_buy_price: 0,
+    target_sell_price: 0,
     notes: "Watch for sentiment confirmation and volume pickup",
     tags: "undervalued, dividend, uae"
   })
@@ -51,6 +53,19 @@ export default function PortfoliosPage() {
     () => portfolios.find((item) => item.id === selectedPortfolioId) || portfolios[0],
     [portfolios, selectedPortfolioId]
   )
+  const selectedWatchlist = useMemo(
+    () => watchlists.find((item) => item.id === selectedWatchlistId) || watchlists[0],
+    [selectedWatchlistId, watchlists]
+  )
+  const selectedTransactionAsset = useMemo(
+    () => assetCatalog.find((item) => item.symbol === transactionForm.symbol) || assetCatalog[0],
+    [assetCatalog, transactionForm.symbol]
+  )
+  const selectedWatchAsset = useMemo(
+    () => assetCatalog.find((item) => item.symbol === watchlistItemForm.symbol) || assetCatalog[0],
+    [assetCatalog, watchlistItemForm.symbol]
+  )
+
   useEffect(() => {
     setTransactionForm((current) =>
       current.transaction_date
@@ -61,6 +76,61 @@ export default function PortfoliosPage() {
           }
     )
   }, [])
+
+  useEffect(() => {
+    if (!transactionForm.symbol && assetCatalog.length) {
+      const firstAsset = assetCatalog[0]
+      setTransactionForm((current) => ({
+        ...current,
+        symbol: firstAsset.symbol,
+        price: firstAsset.price
+      }))
+    }
+    if (!watchlistItemForm.symbol && assetCatalog.length) {
+      const firstAsset = assetCatalog[0]
+      setWatchlistItemForm((current) => ({
+        ...current,
+        symbol: firstAsset.symbol,
+        asset_name: firstAsset.name,
+        target_buy_price: Number((firstAsset.price * 0.96).toFixed(2)),
+        target_sell_price: Number((firstAsset.price * 1.08).toFixed(2))
+      }))
+    }
+    if (!scoreSymbol && assetCatalog.length) {
+      setScoreSymbol(assetCatalog[0].symbol)
+    }
+  }, [assetCatalog, scoreSymbol, transactionForm.symbol, watchlistItemForm.symbol])
+
+  useEffect(() => {
+    if (selectedTransactionAsset) {
+      setTransactionForm((current) => ({
+        ...current,
+        symbol: selectedTransactionAsset.symbol,
+        price: Number(selectedTransactionAsset.price.toFixed(2))
+      }))
+    }
+  }, [selectedTransactionAsset])
+
+  useEffect(() => {
+    if (selectedWatchAsset) {
+      setWatchlistItemForm((current) => ({
+        ...current,
+        symbol: selectedWatchAsset.symbol,
+        asset_name: selectedWatchAsset.name,
+        target_buy_price:
+          current.target_buy_price > 0 ? current.target_buy_price : Number((selectedWatchAsset.price * 0.96).toFixed(2)),
+        target_sell_price:
+          current.target_sell_price > 0 ? current.target_sell_price : Number((selectedWatchAsset.price * 1.08).toFixed(2))
+      }))
+    }
+  }, [selectedWatchAsset])
+
+  useEffect(() => {
+    if (!selectedWatchlistId && watchlists.length) {
+      setSelectedWatchlistId(watchlists[0].id)
+    }
+  }, [selectedWatchlistId, watchlists])
+
   const { data: analytics } = usePortfolioAnalytics(selectedPortfolio?.id)
   const { data: investmentScore } = useInvestmentScore(scoreSymbol, riskProfile)
 
@@ -95,7 +165,7 @@ export default function PortfoliosPage() {
 
   const addWatchlistItem = useMutation({
     mutationFn: async () => {
-      const activeWatchlist = watchlists[0]
+      const activeWatchlist = selectedWatchlist
       if (!activeWatchlist) return
       await apiClient.post(`/portfolios/watchlists/${activeWatchlist.id}/items`, {
         ...watchlistItemForm,
@@ -246,11 +316,17 @@ export default function PortfoliosPage() {
                   <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Transaction intake</div>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <Field label="Symbol">
-                      <input
+                      <select
                         className="input-premium"
                         value={transactionForm.symbol}
-                        onChange={(event) => setTransactionForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))}
-                      />
+                        onChange={(event) => setTransactionForm((current) => ({ ...current, symbol: event.target.value }))}
+                      >
+                        {assetCatalog.map((item) => (
+                          <option key={item.symbol} value={item.symbol}>
+                            {item.symbol} - {item.name}
+                          </option>
+                        ))}
+                      </select>
                     </Field>
                     <Field label="Type">
                       <select
@@ -296,6 +372,11 @@ export default function PortfoliosPage() {
                       />
                     </Field>
                   </div>
+                  {selectedTransactionAsset ? (
+                    <div className="mt-4 text-xs text-white/46">
+                      {selectedTransactionAsset.sector} • {selectedTransactionAsset.exchange || "Exchange"} • Live {formatCompactCurrency(selectedTransactionAsset.price, selectedTransactionAsset.currency)}
+                    </div>
+                  ) : null}
                   <button onClick={() => addTransaction.mutate()} className="action-premium mt-5" disabled={addTransaction.isPending}>
                     <Briefcase className="h-4 w-4" />
                     {addTransaction.isPending ? "Saving..." : "Add transaction"}
@@ -369,7 +450,13 @@ export default function PortfoliosPage() {
             <h2 className="mt-4 text-3xl font-semibold text-white">Score a symbol with live platform context</h2>
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <Field label="Symbol">
-                <input className="input-premium" value={scoreSymbol} onChange={(event) => setScoreSymbol(event.target.value.toUpperCase())} />
+                <select className="input-premium" value={scoreSymbol} onChange={(event) => setScoreSymbol(event.target.value)}>
+                  {assetCatalog.map((item) => (
+                    <option key={item.symbol} value={item.symbol}>
+                      {item.symbol} - {item.name}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Risk profile">
                 <select className="input-premium" value={riskProfile} onChange={(event) => setRiskProfile(event.target.value)}>
@@ -450,8 +537,31 @@ export default function PortfoliosPage() {
             <div className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
               <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Add watch item</div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Destination watchlist">
+                  <select
+                    className="input-premium"
+                    value={selectedWatchlist?.id || ""}
+                    onChange={(event) => setSelectedWatchlistId(Number(event.target.value))}
+                  >
+                    {watchlists.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="Symbol">
-                  <input className="input-premium" value={watchlistItemForm.symbol} onChange={(event) => setWatchlistItemForm((current) => ({ ...current, symbol: event.target.value.toUpperCase() }))} />
+                  <select
+                    className="input-premium"
+                    value={watchlistItemForm.symbol}
+                    onChange={(event) => setWatchlistItemForm((current) => ({ ...current, symbol: event.target.value }))}
+                  >
+                    {assetCatalog.map((item) => (
+                      <option key={item.symbol} value={item.symbol}>
+                        {item.symbol} - {item.name}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="Asset name">
                   <input className="input-premium" value={watchlistItemForm.asset_name} onChange={(event) => setWatchlistItemForm((current) => ({ ...current, asset_name: event.target.value }))} />
@@ -469,13 +579,18 @@ export default function PortfoliosPage() {
                   <input className="input-premium" value={watchlistItemForm.notes} onChange={(event) => setWatchlistItemForm((current) => ({ ...current, notes: event.target.value }))} />
                 </Field>
               </div>
+              {selectedWatchAsset ? (
+                <div className="mt-4 text-xs text-white/46">
+                  {selectedWatchAsset.sector} • {selectedWatchAsset.exchange || "Exchange"} • Live {formatCompactCurrency(selectedWatchAsset.price, selectedWatchAsset.currency)}
+                </div>
+              ) : null}
               <button
                 onClick={() => addWatchlistItem.mutate()}
                 className="action-premium mt-5"
-                disabled={!watchlists.length || addWatchlistItem.isPending}
+                disabled={!selectedWatchlist || addWatchlistItem.isPending}
               >
                 <Plus className="h-4 w-4" />
-                {addWatchlistItem.isPending ? "Adding..." : "Add to first watchlist"}
+                {addWatchlistItem.isPending ? "Adding..." : "Add to watchlist"}
               </button>
               <ActionStatus
                 isPending={addWatchlistItem.isPending}

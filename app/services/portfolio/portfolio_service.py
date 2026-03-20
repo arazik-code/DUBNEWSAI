@@ -21,10 +21,37 @@ from app.models.portfolio import (
     WatchlistItem,
 )
 from app.services.intelligence.market_intelligence_service import MarketIntelligenceService
+from app.services.market_service import MarketService
+from app.utils.symbols import normalize_symbol, symbol_metadata
 
 
 class PortfolioService:
     """Comprehensive portfolio management service."""
+
+    async def get_asset_catalog(self, db: AsyncSession) -> list[dict[str, Any]]:
+        symbols = list(MarketIntelligenceService.SECTOR_MAP.keys())
+        snapshots = await MarketService.get_latest_market_data_for_symbols(
+            db,
+            symbols,
+            include_watchlist_fallback=True,
+            limit=len(symbols),
+        )
+        catalog: list[dict[str, Any]] = []
+        for item in snapshots:
+            metadata = symbol_metadata(item["symbol"])
+            catalog.append(
+                {
+                    "symbol": metadata.display if metadata else item["symbol"],
+                    "canonical_symbol": normalize_symbol(item["symbol"]),
+                    "name": metadata.name if metadata else item["name"],
+                    "sector": MarketIntelligenceService.SECTOR_MAP.get(normalize_symbol(item["symbol"]), item.get("asset_class") or "Other"),
+                    "price": float(item.get("price", 0.0)),
+                    "change_percent": float(item.get("change_percent", 0.0)),
+                    "exchange": metadata.exchange if metadata else item.get("exchange"),
+                    "currency": item.get("currency", "AED"),
+                }
+            )
+        return sorted(catalog, key=lambda entry: (entry["sector"], entry["name"]))
 
     async def create_portfolio(
         self,
@@ -79,11 +106,12 @@ class PortfolioService:
         fees: float = 0.0,
         notes: str | None = None,
     ) -> dict[str, Any]:
+        normalized_symbol = normalize_symbol(symbol)
         total_amount = quantity * price + fees
         transaction = PortfolioTransaction(
             portfolio_id=portfolio_id,
             transaction_type=transaction_type,
-            symbol=symbol.upper(),
+            symbol=normalized_symbol,
             quantity=quantity,
             price=price,
             total_amount=total_amount,
@@ -96,7 +124,7 @@ class PortfolioService:
         result = await db.execute(
             select(PortfolioHolding).where(
                 PortfolioHolding.portfolio_id == portfolio_id,
-                PortfolioHolding.symbol == symbol.upper(),
+                PortfolioHolding.symbol == normalized_symbol,
             )
         )
         holding = result.scalar_one_or_none()
@@ -109,9 +137,9 @@ class PortfolioService:
             else:
                 holding = PortfolioHolding(
                     portfolio_id=portfolio_id,
-                    symbol=symbol.upper(),
+                    symbol=normalized_symbol,
                     asset_type="stock",
-                    asset_name=symbol.upper(),
+                    asset_name=(symbol_metadata(normalized_symbol).name if symbol_metadata(normalized_symbol) else normalized_symbol),
                     quantity=quantity,
                     average_cost=price,
                     purchase_date=transaction_date,
@@ -182,13 +210,14 @@ class PortfolioService:
         notes: str | None = None,
         tags: list[str] | None = None,
     ) -> WatchlistItem:
-        current_prices = await self._get_current_prices(db, [symbol.upper()])
-        current_price = current_prices.get(symbol.upper())
+        normalized_symbol = normalize_symbol(symbol)
+        current_prices = await self._get_current_prices(db, [normalized_symbol])
+        current_price = current_prices.get(normalized_symbol)
         item = WatchlistItem(
             watchlist_id=watchlist_id,
-            symbol=symbol.upper(),
+            symbol=normalized_symbol,
             asset_type=asset_type,
-            asset_name=asset_name or symbol.upper(),
+            asset_name=asset_name or (symbol_metadata(normalized_symbol).name if symbol_metadata(normalized_symbol) else normalized_symbol),
             target_buy_price=target_buy_price,
             target_sell_price=target_sell_price,
             notes=notes,
@@ -408,12 +437,13 @@ class PortfolioService:
     async def _get_current_prices(self, db: AsyncSession, symbols: list[str]) -> dict[str, float]:
         prices: dict[str, float] = {}
         for symbol in symbols:
+            normalized_symbol = normalize_symbol(symbol)
             result = await db.execute(
-                select(MarketData).where(MarketData.symbol == symbol).order_by(MarketData.data_timestamp.desc()).limit(1)
+                select(MarketData).where(MarketData.symbol == normalized_symbol).order_by(MarketData.data_timestamp.desc()).limit(1)
             )
             row = result.scalar_one_or_none()
             if row is not None:
-                prices[symbol] = float(row.price)
+                prices[normalized_symbol] = float(row.price)
         return prices
 
     async def _create_performance_snapshot(
