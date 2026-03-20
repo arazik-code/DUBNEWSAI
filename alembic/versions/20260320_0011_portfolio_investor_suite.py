@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20260320_0011"
@@ -10,8 +11,8 @@ branch_labels = None
 depends_on = None
 
 
-portfolio_type = sa.Enum("stocks", "real_estate", "mixed", "watchlist", name="portfolio_type")
-transaction_type = sa.Enum("buy", "sell", "dividend", "split", name="transaction_type")
+portfolio_type = postgresql.ENUM("stocks", "real_estate", "mixed", "watchlist", name="portfolio_type", create_type=False)
+transaction_type = postgresql.ENUM("buy", "sell", "dividend", "split", name="transaction_type", create_type=False)
 
 
 def upgrade() -> None:
