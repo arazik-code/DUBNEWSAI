@@ -18,6 +18,18 @@ function isHostedProductionEnvironment() {
   )
 }
 
+function isHostedBrowserEnvironment() {
+  return typeof window !== "undefined" && !isLocalHostname(window.location.hostname)
+}
+
+function shouldForceProductionEndpoints() {
+  if (isHostedBrowserEnvironment()) {
+    return true
+  }
+
+  return isHostedProductionEnvironment()
+}
+
 function shouldRejectLocalCandidate(hostname: string) {
   if (!isLocalHostname(hostname)) {
     return false
@@ -31,10 +43,11 @@ function shouldRejectLocalCandidate(hostname: string) {
 }
 
 export function normalizeApiBaseUrl(value?: string | null) {
-  const fallback =
-    typeof window !== "undefined" && isLocalHostname(window.location.hostname)
-      ? LOCAL_API_URL
-      : PRODUCTION_API_URL
+  const fallback = shouldForceProductionEndpoints() ? PRODUCTION_API_URL : LOCAL_API_URL
+
+  if (shouldForceProductionEndpoints()) {
+    return PRODUCTION_API_URL
+  }
 
   const candidate = (value || fallback).trim()
 
@@ -58,6 +71,10 @@ export function normalizeApiBaseUrl(value?: string | null) {
 }
 
 export function getDefaultAppUrl(value?: string | null) {
+  if (shouldForceProductionEndpoints()) {
+    return PRODUCTION_APP_URL
+  }
+
   const candidate = (value || PRODUCTION_APP_URL).trim()
 
   try {
@@ -72,10 +89,11 @@ export function getDefaultAppUrl(value?: string | null) {
 }
 
 export function getDefaultWsUrl(value?: string | null) {
-  const fallback =
-    typeof window !== "undefined" && isLocalHostname(window.location.hostname)
-      ? LOCAL_WS_URL
-      : PRODUCTION_WS_URL
+  const fallback = shouldForceProductionEndpoints() ? PRODUCTION_WS_URL : LOCAL_WS_URL
+
+  if (shouldForceProductionEndpoints()) {
+    return PRODUCTION_WS_URL
+  }
 
   const candidate = (value || fallback).trim()
 

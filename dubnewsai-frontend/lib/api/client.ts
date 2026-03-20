@@ -3,17 +3,19 @@ import axios from "axios"
 import { normalizeApiBaseUrl } from "@/lib/config/api"
 import { useAuthStore } from "@/lib/store/authStore"
 
-const API_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+function getApiUrl() {
+  return normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+}
 
 export const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
   headers: {
     "Content-Type": "application/json"
   }
 })
 
 const refreshClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
   headers: {
     "Content-Type": "application/json"
   }
@@ -50,6 +52,7 @@ async function refreshAccessToken() {
 
   refreshPromise = refreshClient
     .post("/auth/refresh", null, {
+      baseURL: getApiUrl(),
       headers: {
         Authorization: `Bearer ${refreshToken}`
       }
@@ -85,6 +88,7 @@ export async function ensureValidAccessToken() {
 }
 
 apiClient.interceptors.request.use(async (config) => {
+  config.baseURL = getApiUrl()
   const requestUrl = String(config.url || "")
   const isAuthRequest =
     requestUrl.includes("/auth/login") ||
