@@ -94,6 +94,13 @@ async def get_news(
     """
     del current_user
     news_item = await NewsService.get_article_by_id(db, article_id)
+    if isinstance(news_item, dict):
+        description, content = NewsService._normalize_article_text(
+            news_item.get("description"),
+            news_item.get("content"),
+        )
+        news_item["description"] = description
+        news_item["content"] = content
     return NewsArticleResponse.model_validate(news_item)
 
 
