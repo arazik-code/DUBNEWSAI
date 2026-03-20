@@ -13,6 +13,14 @@ from app.models.market_data import CurrencyRate, EconomicIndicator, MarketData, 
 
 
 class MarketService:
+    MAX_DATABASE_VOLUME = 2_147_483_647
+
+    @classmethod
+    def _sanitize_volume(cls, value: int | None) -> int:
+        if value is None:
+            return 0
+        return max(0, min(int(value), cls.MAX_DATABASE_VOLUME))
+
     @staticmethod
     async def _invalidate_market_cache(symbol: str | None = None) -> None:
         await cache.delete_pattern("market_latest:*")
@@ -130,7 +138,7 @@ class MarketService:
                 low_price=float(quote_data.get("04. low", 0) or 0),
                 close_price=float(quote_data.get("08. previous close", 0) or 0),
                 previous_close=float(quote_data.get("08. previous close", 0) or 0),
-                volume=int(float(quote_data.get("06. volume", 0) or 0)),
+                volume=MarketService._sanitize_volume(int(float(quote_data.get("06. volume", 0) or 0))),
                 market_cap=None,
                 change=float(quote_data.get("09. change", 0) or 0),
                 change_percent=float(str(quote_data.get("10. change percent", "0")).replace("%", "") or 0),
@@ -209,7 +217,7 @@ class MarketService:
             low_price=low_price,
             close_price=price,
             previous_close=previous_close,
-            volume=volume,
+            volume=MarketService._sanitize_volume(volume),
             market_cap=market_cap,
             change=change,
             change_percent=change_percent,
