@@ -10,9 +10,13 @@ from app.models.base import BaseModel, enum_kwargs
 
 if TYPE_CHECKING:
     from app.models.alert import Alert, Automation
+    from app.models.api_access import APIKey
+    from app.models.collaboration import Team, TeamMember
     from app.models.notification import Notification
+    from app.models.portfolio import InvestmentRecommendation, Portfolio, Watchlist
     from app.models.subscription import Subscription
     from app.models.user_preference import UserPreference
+    from app.models.white_label import WhiteLabelConfig
 
 
 class UserRole(str, Enum):
@@ -53,3 +57,13 @@ class User(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    portfolios: Mapped[list["Portfolio"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    watchlists: Mapped[list["Watchlist"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    investment_recommendations: Mapped[list["InvestmentRecommendation"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    api_keys: Mapped[list["APIKey"]] = relationship(cascade="all, delete-orphan")
+    owned_teams: Mapped[list["Team"]] = relationship(foreign_keys="Team.owner_id")
+    team_memberships: Mapped[list["TeamMember"]] = relationship(cascade="all, delete-orphan")
+    white_label_configs: Mapped[list["WhiteLabelConfig"]] = relationship(cascade="all, delete-orphan")

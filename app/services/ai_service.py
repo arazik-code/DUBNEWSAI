@@ -477,3 +477,55 @@ class AIService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_symbol_sentiment(
+        db: AsyncSession,
+        *,
+        symbol: str,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        from_date = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await db.execute(
+            select(NewsArticle)
+            .where(
+                and_(
+                    NewsArticle.published_at >= from_date,
+                    NewsArticle.is_published.is_(True),
+                )
+            )
+            .order_by(NewsArticle.published_at.desc())
+        )
+        symbol_lower = symbol.lower().replace(".du", "").replace(".ad", "")
+        scores: list[float] = []
+        article_count = 0
+        for article in result.scalars().all():
+            text = " ".join(part for part in [article.title, article.description or "", article.content or ""] if part).lower()
+            if symbol_lower not in text:
+                continue
+            raw_score = float(article.sentiment_score or 0.0)
+            scores.append(raw_score / 100 if abs(raw_score) > 1 else raw_score)
+            article_count += 1
+        average = mean(scores) if scores else 0.0
+        return {
+            "symbol": symbol,
+            "days": days,
+            "article_count": article_count,
+            "average_sentiment": round(average, 3),
+            "label": "positive" if average > 0.15 else "negative" if average < -0.15 else "neutral",
+        }
+
+    @staticmethod
+    async def get_overall_sentiment(
+        db: AsyncSession,
+        *,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        distribution = await AIService.get_sentiment_distribution(db, days=days)
+        mood = await AIService.get_market_mood(db, days=days)
+        return {
+            "days": days,
+            "distribution": distribution,
+            "mood": mood,
+            "average_sentiment": round((distribution["positive_percent"] - distribution["negative_percent"]) / 100, 3),
+        }

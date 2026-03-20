@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.public_api import router as public_api_router
 from app.api.v1.router import api_router
 from app.config import get_settings
 from app.core.cache import cache
@@ -97,6 +98,7 @@ app.add_middleware(OptionalAuthMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+app.include_router(public_api_router, prefix="/api")
 
 
 @app.get("/health")

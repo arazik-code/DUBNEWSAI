@@ -3,7 +3,16 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { apiClient } from "@/lib/api/client"
-import type { EconomicIndicator, MarketOverviewResponse, MarketStock, WeatherSnapshot } from "@/types"
+import type {
+  ComparativeAnalysisResponse,
+  EconomicIndicator,
+  MarketIntelligenceResponse,
+  MarketOverviewResponse,
+  MarketStock,
+  PropertyValuationResponse,
+  ROIResponse,
+  WeatherSnapshot
+} from "@/types"
 
 export function useMarketData(limit = 24) {
   return useQuery<MarketStock[]>({
@@ -57,3 +66,19 @@ export function useMarketWeather() {
     }
   })
 }
+
+export function useMarketIntelligence(region = "UAE") {
+  return useQuery<MarketIntelligenceResponse>({
+    queryKey: ["analytics", "market-intelligence", region],
+    queryFn: async () => {
+      const { data } = await apiClient.get<MarketIntelligenceResponse>("/analytics/market-intelligence", {
+        params: { region }
+      })
+      return data
+    }
+  })
+}
+
+export type PropertyValuationApi = PropertyValuationResponse
+export type PropertyRoiApi = ROIResponse
+export type PropertyCmaApi = ComparativeAnalysisResponse

@@ -5,9 +5,18 @@ from app.core.rate_limit import check_tiered_rate_limit
 from app.database import get_db
 from app.dependencies import get_current_user_optional
 from app.models.market_data import MarketType
+from app.schemas.intelligence import (
+    ComparativeAnalysisRequest,
+    ComparativeAnalysisResponse,
+    PropertyValuationRequest,
+    PropertyValuationResponse,
+    ROIRequest,
+    ROIResponse,
+)
 from app.models.user import User
 from app.schemas.market_data import EconomicIndicatorResponse, MarketDataResponse, MarketOverview, WeatherSnapshotResponse
 from app.services.aggregation.market_aggregator import COMMODITY_SYMBOLS, GLOBAL_REALESTATE_SYMBOLS, UAE_CORE_SYMBOLS, market_aggregator
+from app.services.intelligence.property_valuation_service import property_valuation
 from app.services.market_service import MarketService
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -137,3 +146,59 @@ async def get_symbol_data(
     if data is None:
         raise HTTPException(status_code=404, detail="Symbol not found")
     return MarketDataResponse.model_validate(data)
+
+
+@router.post("/property-valuation/estimate", response_model=PropertyValuationResponse)
+async def estimate_property_value(
+    payload: PropertyValuationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> PropertyValuationResponse:
+    del current_user
+    data = await property_valuation.estimate_property_value(
+        db,
+        area_sqft=payload.area_sqft,
+        bedrooms=payload.bedrooms,
+        location=payload.location,
+        property_type=payload.property_type,
+        year_built=payload.year_built,
+        amenities=payload.amenities,
+    )
+    return PropertyValuationResponse.model_validate(data)
+
+
+@router.post("/property-valuation/roi", response_model=ROIResponse)
+async def calculate_property_roi(
+    payload: ROIRequest,
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> ROIResponse:
+    del current_user
+    data = await property_valuation.calculate_roi(
+        purchase_price=payload.purchase_price,
+        rental_income_monthly=payload.rental_income_monthly,
+        expenses_monthly=payload.expenses_monthly,
+        appreciation_rate=payload.appreciation_rate,
+    )
+    return ROIResponse.model_validate(data)
+
+
+@router.post("/property-valuation/comparative-analysis", response_model=ComparativeAnalysisResponse)
+async def get_comparative_market_analysis(
+    payload: ComparativeAnalysisRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> ComparativeAnalysisResponse:
+    del current_user
+    data = await property_valuation.comparative_market_analysis(
+        db,
+        location=payload.location,
+        property_type=payload.property_type,
+        bedrooms=payload.bedrooms,
+        area_sqft=payload.area_sqft,
+        year_built=payload.year_built,
+        radius_km=payload.radius_km,
+    )
+    return ComparativeAnalysisResponse.model_validate(data)

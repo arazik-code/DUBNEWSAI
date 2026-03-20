@@ -86,6 +86,14 @@
   .panel-deep {
     @apply rounded-[2rem] border border-white/10 bg-[#0a0d12]/90 shadow-[0_30px_100px_-50px_rgba(0,0,0,0.95)] backdrop-blur-2xl;
   }
+
+  .input-premium {
+    @apply w-full rounded-[1.15rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white placeholder:opacity-30 focus:border-cyan-300/35 focus:bg-white/[0.06];
+  }
+
+  .action-premium {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-white transition opacity-90 hover:bg-white/[0.08] hover:opacity-100;
+  }
 }
 
 @layer utilities {

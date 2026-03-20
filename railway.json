@@ -1,0 +1,17 @@
+{
+  "build": {
+    "builder": "DOCKERFILE"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE"
+  },
+  "healthcheckPath": "/health",
+  "healthcheckTimeout": 300,
+  "env": {
+    "ENABLE_PREDICTIONS": "true",
+    "PREDICTION_CACHE_HOURS": "24",
+    "CELERY_WORKER_CONCURRENCY": "2"
+  }
+}

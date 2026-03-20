@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.market_tasks",
         "app.tasks.aggregation_tasks",
         "app.tasks.ai_tasks",
+        "app.tasks.scheduled_tasks",
     ],
 )
 
@@ -48,6 +49,10 @@ celery_app.conf.beat_schedule = {
     "reanalyze-low-confidence-daily": {
         "task": "reanalyze_low_confidence_articles",
         "schedule": crontab(hour=3, minute=0),
+    },
+    "daily-predictions": {
+        "task": "daily_prediction_update",
+        "schedule": crontab(hour=2, minute=0),
     },
 }
 

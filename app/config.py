@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     ENABLE_EMBEDDED_SYNC: bool | None = None
     EMBEDDED_NEWS_SYNC_MINUTES: int = 2
     EMBEDDED_MARKET_SYNC_MINUTES: int = 15
+    ENABLE_PREDICTIONS: bool = True
+    PREDICTION_CACHE_HOURS: int = 24
+    EXECUTIVE_FEATURES: bool = True
+    PUBLIC_API_ENABLED: bool = True
+    DEFAULT_API_RATE_LIMIT: int = 100
+    MAX_TEAM_MEMBERS: int = 10
+    ENABLE_TEAM_FEATURES: bool = True
 
     DATABASE_URL: str
     DB_ECHO: bool = False

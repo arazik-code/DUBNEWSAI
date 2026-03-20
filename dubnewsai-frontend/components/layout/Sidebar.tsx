@@ -1,6 +1,6 @@
 "use client"
 
-import { BarChart3, BellRing, Building2, LayoutDashboard, LineChart, Newspaper, Settings, Shield, Sparkles } from "lucide-react"
+import { BarChart3, BellRing, Briefcase, Building2, LayoutDashboard, LineChart, Newspaper, Settings, Shield, Sparkles, Swords, Users2, Waves } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -11,7 +11,11 @@ const baseItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/news", label: "News Feed", icon: Newspaper },
   { href: "/market", label: "Market", icon: LineChart },
+  { href: "/portfolios", label: "Investor Suite", icon: Briefcase },
+  { href: "/competitors", label: "Competitors", icon: Swords },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/executive", label: "Executive", icon: Waves },
+  { href: "/teams", label: "Teams", icon: Users2 },
   { href: "/alerts", label: "Alerts", icon: BellRing },
   { href: "/settings", label: "Settings", icon: Settings }
 ]

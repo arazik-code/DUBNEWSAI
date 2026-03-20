@@ -2,12 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import { Activity, BarChart3, BrainCircuit, Radar, Sparkles, Waves } from "lucide-react"
+import { Activity, AlertTriangle, BarChart3, BrainCircuit, Radar, ShieldAlert, Sparkles, Waves } from "lucide-react"
 
 import { AuthGuard } from "@/components/auth/AuthGuard"
 import { PremiumPageHero } from "@/components/ui/premium-page-hero"
 import { apiClient } from "@/lib/api/client"
-import { titleCase } from "@/lib/utils/formatters"
+import { useMarketIntelligence } from "@/lib/hooks/useMarketData"
+import { formatCompactNumber, titleCase } from "@/lib/utils/formatters"
 
 interface AnalyticsOverview {
   mood: {
@@ -45,11 +46,15 @@ export default function AnalyticsPage() {
       return response.data
     }
   })
+  const { data: intelligence } = useMarketIntelligence("UAE")
 
   const mood = data?.mood
   const sentiment = data?.sentiment_distribution
   const maxTimeline = Math.max(...(data?.sentiment_timeline.map((item) => item.total) || [1]))
   const maxCategory = Math.max(...(data?.category_distribution.map((item) => item.share_percent) || [1]))
+  const health = intelligence?.market_health_score
+  const volatility = intelligence?.volatility_analysis
+  const sectors = intelligence?.sector_performance.sectors || []
 
   return (
     <AuthGuard>
@@ -58,35 +63,37 @@ export default function AnalyticsPage() {
           eyebrow="Analytics command"
           title="Market intelligence should explain pressure, direction, and narrative concentration in one place."
           description={
+            intelligence?.executive_summary.narrative ||
             mood?.summary ||
-            "Analytics now ties sentiment, topical concentration, provider mix, and story momentum into a single market brief instead of presenting isolated percentages."
+            "Analytics now ties sentiment, topical concentration, provider mix, sector pressure, and board momentum into a single market brief instead of isolated percentages."
           }
           chips={[
-            mood?.label || "Balanced",
+            intelligence?.executive_summary.headline || mood?.label || "Balanced",
             "Topic momentum",
             "Provider mix",
-            "Seven-day narrative"
+            "Seven-day narrative",
+            health ? `${health.grade} health` : "Health pending"
           ]}
           stats={[
             {
-              label: "Mood score",
-              value: mood ? `${mood.score}` : "0",
-              hint: mood?.label || "No narrative summary yet"
+              label: "Market health",
+              value: health ? `${health.overall_score}` : "0",
+              hint: health ? `${health.grade} / ${titleCase(health.trend)}` : "Health engine calibrating"
             },
             {
-              label: "Positive share",
-              value: `${sentiment?.positive_percent ?? 0}%`,
-              hint: "Constructive coverage across the active article pool"
+              label: "Narrative mood",
+              value: mood?.label || "Balanced",
+              hint: mood?.summary || "Narrative summary pending"
             },
             {
-              label: "Negative share",
-              value: `${sentiment?.negative_percent ?? 0}%`,
-              hint: "Stress coverage and downside pressure"
+              label: "Risk regime",
+              value: volatility ? titleCase(volatility.regime) : "Normal",
+              hint: volatility ? `${volatility.volatility_30d}% 30-day vol` : "Volatility panel pending"
             },
             {
-              label: "Analyzed pool",
-              value: `${sentiment?.total ?? 0}`,
-              hint: "Stories feeding the intelligence layer"
+              label: "Opportunities",
+              value: `${intelligence?.opportunities.length ?? 0}`,
+              hint: "Setups surfaced by momentum, divergence, and breakout screening"
             }
           ]}
           tone="emerald"
@@ -94,9 +101,9 @@ export default function AnalyticsPage() {
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatTile icon={BrainCircuit} label="Narrative mood" value={mood?.label || "Balanced"} hint="Derived from sentiment spread and dominant themes" />
-          <StatTile icon={Sparkles} label="Trend themes" value={`${data?.trends.length ?? 0}`} hint="Cleaned keyword set without stopword noise" />
-          <StatTile icon={Radar} label="Providers active" value={`${data?.provider_distribution.length ?? 0}`} hint="News mix contributing to the intelligence graph" />
-          <StatTile icon={Activity} label="Timeline points" value={`${data?.sentiment_timeline.length ?? 0}`} hint="Daily sentiment checkpoints across the last week" />
+          <StatTile icon={Sparkles} label="Health grade" value={health?.grade || "Pending"} hint="Composite read of momentum, volume, sentiment, volatility, and breadth" />
+          <StatTile icon={Radar} label="Top sector" value={intelligence?.sector_performance.rankings.best_performing || "Mixed"} hint="Leading performance cohort across the sampled board" />
+          <StatTile icon={Activity} label="Setups found" value={`${intelligence?.opportunities.length ?? 0}`} hint="Screened from momentum, divergence, and breakout behavior" />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -177,6 +184,155 @@ export default function AnalyticsPage() {
                     <TimelineBar color="bg-rose-400" value={point.negative} max={maxTimeline} />
                   </div>
                   <div className="mt-3 text-xs text-white/52">{point.total} stories</div>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Sector leadership</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">Who is actually carrying the board</h2>
+            <div className="mt-6 space-y-4">
+              {sectors.slice(0, 6).map((sector) => (
+                <div key={sector.sector} className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-white">{sector.sector}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-white/38">
+                        {sector.stock_count} names · avg volume {formatCompactNumber(sector.avg_volume)}
+                      </div>
+                    </div>
+                    <div className={`text-sm ${sector.return_30d >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {sector.return_30d.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {sector.top_performers.map((item) => (
+                      <span key={item.symbol} className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">
+                        {item.symbol} {item.return_30d.toFixed(1)}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Momentum engine</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">Technical pressure without the chart clutter</h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <InsightTile
+                label="RSI"
+                value={`${intelligence?.momentum_indicators.rsi.current?.toFixed(1) ?? "0.0"}`}
+                description={`Signal: ${titleCase(intelligence?.momentum_indicators.rsi.signal || "neutral")} · Trend: ${titleCase(intelligence?.momentum_indicators.rsi.trend || "neutral")}`}
+              />
+              <InsightTile
+                label="MACD"
+                value={`${intelligence?.momentum_indicators.macd.histogram?.toFixed(2) ?? "0.00"}`}
+                description={`Bias: ${titleCase(intelligence?.momentum_indicators.macd.signal || "neutral")} · Strength ${intelligence?.momentum_indicators.macd.strength?.toFixed(2) ?? "0.00"}`}
+              />
+              <InsightTile
+                label="30D ROC"
+                value={`${intelligence?.momentum_indicators.rate_of_change.thirty_day?.toFixed(2) ?? "0.00"}%`}
+                description={`Acceleration is ${titleCase(intelligence?.momentum_indicators.rate_of_change.acceleration || "neutral")}`}
+              />
+            </div>
+
+            <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Executive brief</div>
+              <p className="mt-3 text-sm leading-7 text-white/60">
+                {intelligence?.executive_summary.narrative ||
+                  "The executive intelligence layer will condense the board posture, sector leadership, and risk canvas here."}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(intelligence?.executive_summary.focus_areas || []).map((item) => (
+                  <span key={item} className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Risk canvas</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">Current pressure points worth respecting</h2>
+            <div className="mt-6 space-y-4">
+              {(intelligence?.risk_factors || []).map((risk) => (
+                <div key={risk.category} className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-white/40">
+                    <ShieldAlert className="h-3.5 w-3.5 text-rose-200" />
+                    {risk.severity}
+                  </div>
+                  <div className="mt-3 text-sm font-medium text-white">{risk.category}</div>
+                  <p className="mt-2 text-sm leading-7 text-white/58">{risk.description}</p>
+                  <p className="mt-3 text-xs leading-6 text-white/44">{risk.mitigation}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Opportunity map</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">Setups the engine thinks deserve attention</h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {(intelligence?.opportunities || []).slice(0, 6).map((item) => (
+                <div key={`${item.type}-${item.symbol}-${item.indicator}`} className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-white/40">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-200" />
+                    {item.confidence}
+                  </div>
+                  <div className="mt-3 text-sm font-medium text-white">{item.symbol || item.type}</div>
+                  <div className="mt-1 text-xs uppercase tracking-[0.2em] text-white/38">{item.indicator}</div>
+                  <p className="mt-3 text-sm leading-7 text-white/58">{item.rationale}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Benchmark movers</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">Winners and laggards across the active board</h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {(intelligence?.benchmark_snapshots || []).map((item) => (
+                <div key={item.symbol} className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-white">{item.symbol}</div>
+                      <div className="mt-1 text-xs text-white/42">{item.name}</div>
+                    </div>
+                    <div className={`text-sm ${item.change_percent >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {item.change_percent.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/52">
+                    <span>{item.exchange || "Exchange pending"}</span>
+                    <span>{item.region || "Region pending"}</span>
+                    <span>{item.asset_class || "Asset class pending"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-premium p-6 sm:p-8">
+            <p className="story-kicker">Key drivers</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">What is moving the intelligence engine</h2>
+            <div className="mt-6 space-y-4">
+              {(intelligence?.key_drivers || []).map((driver) => (
+                <div key={driver.factor} className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium text-white">{driver.factor}</div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-white/40">{titleCase(driver.impact)}</div>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-white/58">{driver.description}</p>
                 </div>
               ))}
             </div>

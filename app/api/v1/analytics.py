@@ -8,9 +8,11 @@ from app.core.rate_limit import check_tiered_rate_limit
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_user_optional
 from app.models.news import NewsCategory
+from app.schemas.intelligence import MarketIntelligenceResponse
 from app.models.user import User
 from app.schemas.news import NewsArticleResponse
 from app.services.ai_service import AIService
+from app.services.intelligence.market_intelligence_service import market_intelligence
 from app.services.news_service import NewsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -39,6 +41,19 @@ class AnalyticsOverviewResponse(BaseModel):
     category_distribution: list[dict]
     sentiment_timeline: list[dict]
     provider_distribution: list[dict]
+
+
+@router.get("/market-intelligence", response_model=MarketIntelligenceResponse)
+async def get_market_intelligence(
+    region: str = Query(default="UAE"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> MarketIntelligenceResponse:
+    """Get the Phase 1 market intelligence layer."""
+    del current_user
+    payload = await market_intelligence.generate_market_overview(db, region=region)
+    return MarketIntelligenceResponse.model_validate(payload)
 
 
 @router.get("/trends", response_model=list[TrendResponse])
