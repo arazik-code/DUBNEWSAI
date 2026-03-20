@@ -21,6 +21,23 @@ const refreshClient = axios.create({
 
 let refreshPromise: Promise<string | null> | null = null
 
+function isTokenExpired(token: string) {
+  try {
+    const [, payload] = token.split(".")
+    if (!payload) {
+      return true
+    }
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const decoded = JSON.parse(atob(normalized)) as { exp?: number }
+    if (!decoded.exp) {
+      return true
+    }
+    return decoded.exp * 1000 <= Date.now() + 30_000
+  } catch {
+    return true
+  }
+}
+
 async function refreshAccessToken() {
   if (refreshPromise) {
     return refreshPromise
@@ -53,8 +70,28 @@ async function refreshAccessToken() {
   return refreshPromise
 }
 
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken
+export async function ensureValidAccessToken() {
+  const { accessToken, refreshToken } = useAuthStore.getState()
+
+  if (accessToken && !isTokenExpired(accessToken)) {
+    return accessToken
+  }
+
+  if (!refreshToken) {
+    return accessToken
+  }
+
+  return refreshAccessToken()
+}
+
+apiClient.interceptors.request.use(async (config) => {
+  const requestUrl = String(config.url || "")
+  const isAuthRequest =
+    requestUrl.includes("/auth/login") ||
+    requestUrl.includes("/auth/register") ||
+    requestUrl.includes("/auth/refresh")
+
+  const token = isAuthRequest ? useAuthStore.getState().accessToken : await ensureValidAccessToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

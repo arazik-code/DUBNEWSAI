@@ -8,6 +8,28 @@ function isLocalHostname(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1"
 }
 
+function isHostedProductionEnvironment() {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.VERCEL_ENV ||
+      process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_PUBLIC_DOMAIN ||
+      process.env.ENVIRONMENT === "production"
+  )
+}
+
+function shouldRejectLocalCandidate(hostname: string) {
+  if (!isLocalHostname(hostname)) {
+    return false
+  }
+
+  if (typeof window !== "undefined") {
+    return !isLocalHostname(window.location.hostname)
+  }
+
+  return isHostedProductionEnvironment()
+}
+
 export function normalizeApiBaseUrl(value?: string | null) {
   const fallback =
     typeof window !== "undefined" && isLocalHostname(window.location.hostname)
@@ -18,6 +40,9 @@ export function normalizeApiBaseUrl(value?: string | null) {
 
   try {
     const parsed = new URL(candidate)
+    if (shouldRejectLocalCandidate(parsed.hostname)) {
+      return PRODUCTION_API_URL
+    }
     if (
       typeof window !== "undefined" &&
       window.location.protocol === "https:" &&
@@ -28,12 +53,22 @@ export function normalizeApiBaseUrl(value?: string | null) {
     }
     return parsed.toString().replace(/\/$/, "")
   } catch {
-    return candidate.replace(/\/$/, "")
+    return fallback.replace(/\/$/, "")
   }
 }
 
 export function getDefaultAppUrl(value?: string | null) {
-  return (value || PRODUCTION_APP_URL).trim().replace(/\/$/, "")
+  const candidate = (value || PRODUCTION_APP_URL).trim()
+
+  try {
+    const parsed = new URL(candidate)
+    if (shouldRejectLocalCandidate(parsed.hostname)) {
+      return PRODUCTION_APP_URL
+    }
+    return parsed.toString().replace(/\/$/, "")
+  } catch {
+    return PRODUCTION_APP_URL
+  }
 }
 
 export function getDefaultWsUrl(value?: string | null) {
@@ -46,6 +81,9 @@ export function getDefaultWsUrl(value?: string | null) {
 
   try {
     const parsed = new URL(candidate.replace(/^ws/, "http"))
+    if (shouldRejectLocalCandidate(parsed.hostname)) {
+      return PRODUCTION_WS_URL
+    }
     const protocol =
       typeof window !== "undefined" && window.location.protocol === "https:"
         ? "wss://"
@@ -53,6 +91,6 @@ export function getDefaultWsUrl(value?: string | null) {
 
     return `${protocol}${parsed.host}${parsed.pathname}`.replace(/\/$/, "")
   } catch {
-    return candidate.replace(/\/$/, "")
+    return fallback.replace(/\/$/, "")
   }
 }

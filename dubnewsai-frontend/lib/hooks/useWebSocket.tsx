@@ -27,14 +27,21 @@ const WebSocketContext = createContext<WebSocketContextType>({
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
-  const { accessToken, hydrated } = useAuthStore()
+  const { accessToken, hydrated, user } = useAuthStore()
   const upsertNotification = useNotificationStore((state) => state.upsert)
   const [isConnected, setIsConnected] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const heartbeatRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (typeof window === "undefined" || !hydrated || !accessToken) {
+    if (
+      typeof window === "undefined" ||
+      !hydrated ||
+      !accessToken ||
+      !user ||
+      !["premium", "admin"].includes(user.role) ||
+      isTokenExpired(accessToken)
+    ) {
       return
     }
 
@@ -94,7 +101,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       socket.close()
       socketRef.current = null
     }
-  }, [accessToken, hydrated, queryClient, upsertNotification])
+  }, [accessToken, hydrated, queryClient, upsertNotification, user])
 
   const value = useMemo<WebSocketContextType>(
     () => ({
@@ -123,3 +130,19 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 }
 
 export const useWebSocket = () => useContext(WebSocketContext)
+
+function isTokenExpired(token: string) {
+  try {
+    const [, payload] = token.split(".")
+    if (!payload) {
+      return true
+    }
+    const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number }
+    if (!decoded.exp) {
+      return true
+    }
+    return decoded.exp * 1000 <= Date.now() + 30_000
+  } catch {
+    return true
+  }
+}
