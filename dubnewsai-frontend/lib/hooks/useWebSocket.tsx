@@ -45,7 +45,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const wsBase = getDefaultWsUrl(process.env.NEXT_PUBLIC_WS_URL)
+    const wsBase = getDefaultWsUrl()
     const url = `${wsBase.replace(/\/$/, "")}/api/v1/ws?token=${encodeURIComponent(accessToken)}`
     const socket = new WebSocket(url)
 

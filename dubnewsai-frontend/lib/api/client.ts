@@ -4,7 +4,7 @@ import { normalizeApiBaseUrl } from "@/lib/config/api"
 import { useAuthStore } from "@/lib/store/authStore"
 
 function getApiUrl() {
-  return normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+  return normalizeApiBaseUrl()
 }
 
 export const apiClient = axios.create({
