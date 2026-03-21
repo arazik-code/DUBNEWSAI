@@ -29,6 +29,10 @@ class NewsService:
         r"view source version.*?$",
         r"to view the source version of this press release.*?$",
     )
+    ARTICLE_TRUNCATION_PATTERNS = (
+        r"\.\.\.\s*\[\d+\s+chars\]\s*$",
+        r"\[\+\d+\s+chars\]\s*$",
+    )
     ARTICLE_LEAD_MAX_CHARS = 420
 
     @staticmethod
@@ -46,8 +50,25 @@ class NewsService:
         return cleaned or None
 
     @classmethod
+    def _has_truncation_marker(cls, value: str | None) -> bool:
+        if not value:
+            return False
+        normalized = value.strip()
+        return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in cls.ARTICLE_TRUNCATION_PATTERNS)
+
+    @classmethod
+    def _strip_truncation_marker(cls, value: str | None) -> str | None:
+        normalized = cls._normalize_text_blob(value)
+        if not normalized:
+            return None
+        cleaned = normalized
+        for pattern in cls.ARTICLE_TRUNCATION_PATTERNS:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip(" \n-:;,")
+        return cleaned or None
+
+    @classmethod
     def _strip_article_boilerplate(cls, value: str | None) -> str | None:
-        cleaned = cls._normalize_text_blob(value)
+        cleaned = cls._strip_truncation_marker(value)
         if not cleaned:
             return None
         lowered = cleaned.lower()
@@ -176,6 +197,8 @@ class NewsService:
         normalized_content = (content or "").strip()
         normalized_description = (description or "").strip()
         if not normalized_content:
+            return True
+        if NewsService._has_truncation_marker(normalized_content):
             return True
         if "[+" in normalized_content or normalized_content.endswith("..."):
             return True

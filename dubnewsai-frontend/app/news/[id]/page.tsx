@@ -37,8 +37,14 @@ async function getArticle(id: string): Promise<NewsArticle | null> {
 }
 
 function normalizeArticleBody(article: NewsArticle) {
+  const stripTruncationMarker = (value: string) =>
+    value
+      .replace(/\.\.\.\s*\[\d+\s+chars\]\s*$/i, "")
+      .replace(/\[\+\d+\s+chars\]\s*$/i, "")
+      .trim()
+
   const compactLead = (value: string) => {
-    const normalized = value.trim().replace(/\s+/g, " ")
+    const normalized = stripTruncationMarker(value).trim().replace(/\s+/g, " ")
     if (!normalized) {
       return ""
     }
@@ -62,7 +68,7 @@ function normalizeArticleBody(article: NewsArticle) {
   }
 
   const description = compactLead(article.description || "")
-  let content = (article.content || "").trim()
+  let content = stripTruncationMarker(article.content || "")
 
   if (description && content.toLowerCase().startsWith(description.toLowerCase())) {
     content = content.slice(description.length).trim()
