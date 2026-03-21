@@ -26,6 +26,7 @@ from app.services.portfolio.portfolio_service import portfolio_service
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
 
 
+@router.get("", response_model=list[PortfolioResponse], include_in_schema=False)
 @router.get("/", response_model=list[PortfolioResponse])
 async def list_portfolios(
     db: AsyncSession = Depends(get_db),
@@ -46,6 +47,7 @@ async def get_portfolio_asset_catalog(
     return await portfolio_service.get_asset_catalog(db)
 
 
+@router.post("", response_model=PortfolioResponse, include_in_schema=False)
 @router.post("/", response_model=PortfolioResponse)
 async def create_portfolio(
     payload: PortfolioCreateRequest,

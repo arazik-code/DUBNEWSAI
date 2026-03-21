@@ -21,6 +21,7 @@ def _ensure_enabled() -> None:
         raise HTTPException(status_code=404, detail="Team features are disabled")
 
 
+@router.get("", response_model=list[TeamResponse], include_in_schema=False)
 @router.get("/", response_model=list[TeamResponse])
 async def list_teams(
     db: AsyncSession = Depends(get_db),
@@ -49,6 +50,7 @@ async def get_team_directory(
     return [{"id": item.id, "full_name": item.full_name, "email": item.email, "role": item.role.value} for item in users]
 
 
+@router.post("", response_model=TeamResponse, include_in_schema=False)
 @router.post("/", response_model=TeamResponse)
 async def create_team(
     payload: TeamCreateRequest,

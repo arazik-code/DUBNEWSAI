@@ -48,6 +48,7 @@ class AlertResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+@router.post("", response_model=AlertResponse, include_in_schema=False)
 @router.post("/", response_model=AlertResponse)
 async def create_alert(
     alert_data: AlertCreate,
@@ -58,6 +59,7 @@ async def create_alert(
     return AlertResponse.model_validate(alert)
 
 
+@router.get("", response_model=list[AlertResponse], include_in_schema=False)
 @router.get("/", response_model=list[AlertResponse])
 async def get_alerts(
     current_user: User = Depends(get_current_user),

@@ -69,27 +69,69 @@ function copyResponseHeaders(response: Response) {
   return headers
 }
 
+function resolveRedirectUrl(location: string, currentUrl: URL) {
+  const redirectUrl = new URL(location, currentUrl)
+  if (redirectUrl.protocol === "http:") {
+    redirectUrl.protocol = "https:"
+  }
+  return redirectUrl
+}
+
+async function fetchBackend(
+  targetUrl: URL,
+  method: string,
+  headers: Headers,
+  body?: ArrayBuffer
+) {
+  let currentUrl = new URL(targetUrl)
+  let currentMethod = method
+  let currentBody = body
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await fetch(currentUrl, {
+      method: currentMethod,
+      headers,
+      body: currentMethod === "GET" || currentMethod === "HEAD" ? undefined : currentBody,
+      redirect: "manual",
+      cache: "no-store"
+    })
+
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return response
+    }
+
+    const location = response.headers.get("location")
+    if (!location) {
+      return response
+    }
+
+    currentUrl = resolveRedirectUrl(location, currentUrl)
+    if (response.status === 303) {
+      currentMethod = "GET"
+      currentBody = undefined
+    }
+  }
+
+  throw new Error(`Too many backend redirects while proxying ${targetUrl.toString()}`)
+}
+
 async function proxyRequest(request: NextRequest, pathSegments: string[]) {
   try {
     const targetUrl = buildTargetUrl(pathSegments, request.nextUrl)
     const headers = copyRequestHeaders(request)
     const method = request.method.toUpperCase()
+    headers.set("x-forwarded-proto", "https")
+    headers.set("x-forwarded-host", request.headers.get("host") || request.nextUrl.host)
 
-    const init: RequestInit = {
-      method,
-      headers,
-      redirect: "follow",
-      cache: "no-store"
-    }
-
+    let requestBody: ArrayBuffer | undefined
     if (method !== "GET" && method !== "HEAD") {
       const body = await request.arrayBuffer()
       if (body.byteLength > 0) {
-        init.body = body
+        requestBody = body
       }
     }
 
-    const response = await fetch(targetUrl, init)
+    const response = await fetchBackend(targetUrl, method, headers, requestBody)
     const responseHeaders = copyResponseHeaders(response)
 
     if (method === "HEAD") {

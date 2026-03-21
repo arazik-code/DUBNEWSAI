@@ -62,6 +62,7 @@ COMPETITOR_CATALOG = [
         "description": "Dubai market infrastructure player that reflects trading activity and local capital market depth.",
     },
 ]
+@router.get("", response_model=list[CompetitorResponse], include_in_schema=False)
 @router.get("/", response_model=list[CompetitorResponse])
 async def list_competitors(
     db: AsyncSession = Depends(get_db),
@@ -88,6 +89,7 @@ async def get_competitor_catalog(
     return payload
 
 
+@router.post("", response_model=CompetitorResponse, include_in_schema=False)
 @router.post("/", response_model=CompetitorResponse)
 async def create_competitor(
     payload: CompetitorCreateRequest,

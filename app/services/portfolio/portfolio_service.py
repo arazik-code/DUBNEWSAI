@@ -28,6 +28,22 @@ from app.utils.symbols import normalize_symbol, symbol_metadata
 class PortfolioService:
     """Comprehensive portfolio management service."""
 
+    async def _load_portfolio(self, db: AsyncSession, *, portfolio_id: int) -> Portfolio:
+        result = await db.execute(
+            select(Portfolio)
+            .options(selectinload(Portfolio.holdings), selectinload(Portfolio.transactions))
+            .where(Portfolio.id == portfolio_id)
+        )
+        return result.scalar_one()
+
+    async def _load_watchlist(self, db: AsyncSession, *, watchlist_id: int) -> Watchlist:
+        result = await db.execute(
+            select(Watchlist)
+            .options(selectinload(Watchlist.items))
+            .where(Watchlist.id == watchlist_id)
+        )
+        return result.scalar_one()
+
     async def get_asset_catalog(self, db: AsyncSession) -> list[dict[str, Any]]:
         symbols = list(MarketIntelligenceService.SECTOR_MAP.keys())
         snapshots = await MarketService.get_latest_market_data_for_symbols(
@@ -73,8 +89,7 @@ class PortfolioService:
         )
         db.add(portfolio)
         await db.commit()
-        await db.refresh(portfolio)
-        return portfolio
+        return await self._load_portfolio(db, portfolio_id=portfolio.id)
 
     async def list_portfolios(self, db: AsyncSession, *, user_id: int) -> list[Portfolio]:
         result = await db.execute(
@@ -185,8 +200,7 @@ class PortfolioService:
         )
         db.add(watchlist)
         await db.commit()
-        await db.refresh(watchlist)
-        return watchlist
+        return await self._load_watchlist(db, watchlist_id=watchlist.id)
 
     async def list_watchlists(self, db: AsyncSession, *, user_id: int) -> list[Watchlist]:
         result = await db.execute(
