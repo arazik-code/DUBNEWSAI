@@ -3,6 +3,15 @@ import axios from "axios"
 import { normalizeApiBaseUrl } from "@/lib/config/api"
 import { useAuthStore } from "@/lib/store/authStore"
 
+const AUTH_BOOTSTRAP_PATHS = ["/auth/me", "/auth/refresh"]
+
+export class SessionExpiredError extends Error {
+  constructor(message = "Your session has expired. Please sign in again.") {
+    super(message)
+    this.name = "SessionExpiredError"
+  }
+}
+
 function getApiUrl() {
   if (typeof window !== "undefined") {
     return "/api/backend"
@@ -30,15 +39,44 @@ refreshClient.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string | null> | null = null
 
+function decodeJwtPayload(token: string) {
+  const [, payload] = token.split(".")
+  if (!payload) {
+    return null
+  }
+
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=")
+  const decoded =
+    typeof window !== "undefined" ? atob(padded) : Buffer.from(padded, "base64").toString("utf-8")
+
+  return JSON.parse(decoded) as { exp?: number }
+}
+
+function isBootstrapAuthRequest(requestUrl: string) {
+  return AUTH_BOOTSTRAP_PATHS.some((path) => requestUrl.includes(path))
+}
+
+function clearSessionAndRedirect() {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  const { hydrated, accessToken, refreshToken } = useAuthStore.getState()
+  if (!hydrated || (!accessToken && !refreshToken)) {
+    return
+  }
+
+  useAuthStore.getState().clearAuth()
+  if (window.location.pathname !== "/login") {
+    window.location.href = "/login"
+  }
+}
+
 function isTokenExpired(token: string) {
   try {
-    const [, payload] = token.split(".")
-    if (!payload) {
-      return true
-    }
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
-    const decoded = JSON.parse(atob(normalized)) as { exp?: number }
-    if (!decoded.exp) {
+    const decoded = decodeJwtPayload(token)
+    if (!decoded?.exp) {
       return true
     }
     return decoded.exp * 1000 <= Date.now() + 30_000
@@ -70,7 +108,6 @@ async function refreshAccessToken() {
       return nextTokens.access_token
     })
     .catch(() => {
-      useAuthStore.getState().clearAuth()
       return null
     })
     .finally(() => {
@@ -103,6 +140,14 @@ apiClient.interceptors.request.use(async (config) => {
     requestUrl.includes("/auth/refresh")
 
   const token = isAuthRequest ? useAuthStore.getState().accessToken : await ensureValidAccessToken()
+
+  if (!isAuthRequest) {
+    const { hydrated, accessToken, refreshToken } = useAuthStore.getState()
+    if (hydrated && (accessToken || refreshToken) && !token) {
+      throw new SessionExpiredError()
+    }
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -133,14 +178,12 @@ apiClient.interceptors.response.use(
       }
     }
 
-    if (typeof window !== "undefined" && error.response?.status === 401) {
-      const { hydrated, accessToken } = useAuthStore.getState()
-      if (hydrated && accessToken) {
-        useAuthStore.getState().clearAuth()
-      }
-      if (hydrated && accessToken && window.location.pathname !== "/login") {
-        window.location.href = "/login"
-      }
+    if (error instanceof SessionExpiredError) {
+      return Promise.reject(error)
+    }
+
+    if (error.response?.status === 401 && isBootstrapAuthRequest(requestUrl)) {
+      clearSessionAndRedirect()
     }
 
     return Promise.reject(error)

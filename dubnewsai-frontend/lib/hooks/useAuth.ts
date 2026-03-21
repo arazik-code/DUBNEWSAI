@@ -1,6 +1,7 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import axios from "axios"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import toast from "react-hot-toast"
@@ -13,12 +14,17 @@ export function useAuth() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { accessToken, refreshToken, hydrated, user, setAuth, setTokens, setUser, clearAuth } = useAuthStore()
+  const shouldFetchProfile = hydrated && Boolean(accessToken) && !user
 
   const profileQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: getCurrentUser,
-    enabled: hydrated && !!accessToken,
-    retry: false
+    enabled: shouldFetchProfile,
+    retry: false,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false
   })
 
   useEffect(() => {
@@ -28,11 +34,15 @@ export function useAuth() {
   }, [profileQuery.data, setUser])
 
   useEffect(() => {
-    if (profileQuery.isError && hydrated && accessToken) {
+    const isUnauthorized =
+      axios.isAxiosError(profileQuery.error) &&
+      (profileQuery.error.response?.status === 401 || profileQuery.error.response?.status === 403)
+
+    if (isUnauthorized && hydrated && accessToken) {
       clearAuth()
       router.replace("/login")
     }
-  }, [accessToken, clearAuth, hydrated, profileQuery.isError, router])
+  }, [accessToken, clearAuth, hydrated, profileQuery.error, router])
 
   const loginMutation = useMutation({
     mutationFn: loginUser,
