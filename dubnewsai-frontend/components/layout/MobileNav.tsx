@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { LogOut, Menu, X } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useTheme } from "next-themes"
 import { useState } from "react"
 import type { ReactNode } from "react"
 
@@ -14,12 +15,17 @@ import { cn } from "@/lib/utils/cn"
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
   const { logout } = useAuth()
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
 
   return (
     <div className="lg:hidden">
       <button
         onClick={() => setIsOpen((value) => !value)}
-        className="rounded-full border border-slate-200/70 bg-white/75 p-2.5 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/78"
+        className={cn(
+          "rounded-full border p-2.5",
+          isDark ? "border-white/10 bg-white/[0.05] text-white/78" : "border-slate-200/70 bg-white/75 text-slate-700"
+        )}
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>
