@@ -13,6 +13,7 @@ import { apiClient } from "@/lib/api/client"
 import { useTeamActivity, useTeamDirectory, useTeams } from "@/lib/hooks/useEnterprise"
 import { usePortfolios, useWatchlists } from "@/lib/hooks/usePortfolio"
 import { formatDateTime, titleCase } from "@/lib/utils/formatters"
+import type { Team } from "@/types"
 
 export default function TeamsPage() {
   const queryClient = useQueryClient()
@@ -56,9 +57,15 @@ export default function TeamsPage() {
 
   const createTeam = useMutation({
     mutationFn: async () => {
-      await apiClient.post("/teams", teamForm)
+      const { data } = await apiClient.post<Team>("/teams", teamForm)
+      return data
     },
-    onSuccess: async () => {
+    onSuccess: async (team) => {
+      setSelectedId(team.id)
+      setTeamForm({
+        name: "Dubai Strategy Cell",
+        description: "Shared command room for investment, research, and strategy."
+      })
       await queryClient.invalidateQueries({ queryKey: ["teams"] })
     }
   })

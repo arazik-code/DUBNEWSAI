@@ -22,13 +22,18 @@ import type {
   WhiteLabelConfig
 } from "@/types"
 
+const SHORT_LIVED_STALE_TIME = 60 * 1000
+const STANDARD_STALE_TIME = 5 * 60 * 1000
+const LONG_LIVED_STALE_TIME = 30 * 60 * 1000
+
 export function useCompetitors() {
   return useQuery<Competitor[]>({
     queryKey: ["competitors"],
     queryFn: async () => {
       const { data } = await apiClient.get<Competitor[]>("/competitors")
       return data
-    }
+    },
+    staleTime: STANDARD_STALE_TIME
   })
 }
 
@@ -39,7 +44,8 @@ export function useFeatureAccess() {
       const { data } = await apiClient.get<FeatureAccess[]>("/settings/feature-access")
       return data
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: STANDARD_STALE_TIME,
+    refetchOnMount: false,
     retry: false
   })
 }
@@ -54,6 +60,8 @@ export function useAdminFeatureAccessUsers() {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && user?.role === "admin",
+    staleTime: STANDARD_STALE_TIME,
+    refetchOnMount: false,
     retry: false
   })
 }
@@ -68,6 +76,7 @@ export function useAdminFeatureAccess(userId?: number) {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && user?.role === "admin" && Boolean(userId),
+    staleTime: STANDARD_STALE_TIME,
     retry: false
   })
 }
@@ -78,7 +87,8 @@ export function useCompetitorCatalog() {
     queryFn: async () => {
       const { data } = await apiClient.get<CompetitorCatalogItem[]>("/competitors/catalog")
       return data
-    }
+    },
+    staleTime: LONG_LIVED_STALE_TIME
   })
 }
 
@@ -89,7 +99,8 @@ export function useCompetitorAnalysis(competitorId?: number) {
       const { data } = await apiClient.get<CompetitorAnalysis>(`/competitors/${competitorId}/analysis`)
       return data
     },
-    enabled: Boolean(competitorId)
+    enabled: Boolean(competitorId),
+    staleTime: STANDARD_STALE_TIME
   })
 }
 
@@ -100,7 +111,8 @@ export function usePricePrediction(symbol?: string, daysAhead = 30) {
       const { data } = await apiClient.get<PricePrediction>(`/predictions/price/${symbol}`, { params: { days_ahead: daysAhead } })
       return data
     },
-    enabled: Boolean(symbol)
+    enabled: Boolean(symbol),
+    staleTime: LONG_LIVED_STALE_TIME
   })
 }
 
@@ -110,7 +122,8 @@ export function usePredictionUniverse() {
     queryFn: async () => {
       const { data } = await apiClient.get<PredictionUniverseResponse>("/predictions/options")
       return data
-    }
+    },
+    staleTime: LONG_LIVED_STALE_TIME
   })
 }
 
@@ -120,7 +133,8 @@ export function useMarketTrend(region = "UAE") {
     queryFn: async () => {
       const { data } = await apiClient.get<MarketTrendPrediction>("/predictions/market-trend", { params: { region } })
       return data
-    }
+    },
+    staleTime: STANDARD_STALE_TIME
   })
 }
 
@@ -133,7 +147,8 @@ export function usePropertyTrend(location?: string, propertyType = "apartment") 
       })
       return data
     },
-    enabled: Boolean(location)
+    enabled: Boolean(location),
+    staleTime: STANDARD_STALE_TIME
   })
 }
 
@@ -147,6 +162,7 @@ export function useExecutiveDashboard(period = "30d") {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: SHORT_LIVED_STALE_TIME,
     retry: false
   })
 }
@@ -161,6 +177,7 @@ export function useTeams() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: SHORT_LIVED_STALE_TIME,
     retry: false
   })
 }
@@ -175,6 +192,7 @@ export function useTeamActivity(teamId?: number) {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && Boolean(teamId),
+    staleTime: SHORT_LIVED_STALE_TIME,
     retry: false
   })
 }
@@ -189,6 +207,7 @@ export function useTeamDirectory(query = "") {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: LONG_LIVED_STALE_TIME,
     retry: false
   })
 }
@@ -203,6 +222,7 @@ export function useApiKeys() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: SHORT_LIVED_STALE_TIME,
     retry: false
   })
 }
@@ -217,6 +237,7 @@ export function useWhiteLabelConfig() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: SHORT_LIVED_STALE_TIME,
     retry: false
   })
 }

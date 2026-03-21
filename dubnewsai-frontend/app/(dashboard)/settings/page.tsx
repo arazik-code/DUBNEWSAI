@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Bell, Building2, KeyRound, Palette, ShieldCheck, SlidersHorizontal, Waves, Workflow } from "lucide-react"
+import { Bell, Building2, KeyRound, Palette, ShieldCheck, SunMedium, Waves, Workflow } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { AuthGuard } from "@/components/auth/AuthGuard"
@@ -16,6 +16,14 @@ import { useNotifications } from "@/lib/hooks/useNotifications"
 import { useNotificationStore } from "@/lib/store/notificationStore"
 import { formatDateTime, titleCase } from "@/lib/utils/formatters"
 
+const BRAND_PRESETS = [
+  { name: "Gulf Signal", primary: "#22D3EE", secondary: "#F59E0B" },
+  { name: "Capital Mint", primary: "#10B981", secondary: "#0EA5E9" },
+  { name: "Executive Slate", primary: "#334155", secondary: "#F97316" }
+]
+
+const THEME_OPTIONS = ["dark", "light", "system"] as const
+
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const { theme, setTheme } = useTheme()
@@ -27,18 +35,18 @@ export default function SettingsPage() {
   const hydrateNotifications = useNotificationStore((state) => state.hydrate)
   const [apiKeyForm, setApiKeyForm] = useState({ name: "Enterprise feed key", rate_limit_per_hour: 250 })
   const [whiteLabelForm, setWhiteLabelForm] = useState({
-    company_name: whiteLabel?.company_name || "DUBNEWSAI Intelligence",
-    logo_url: whiteLabel?.logo_url || "",
-    primary_color: whiteLabel?.primary_color || "#22d3ee",
-    secondary_color: whiteLabel?.secondary_color || "#f59e0b",
-    custom_domain: whiteLabel?.custom_domain || "",
-    subdomain: whiteLabel?.subdomain || "",
-    api_enabled: whiteLabel?.api_enabled ?? true,
-    api_rate_limit: whiteLabel?.api_rate_limit || 250,
-    is_active: whiteLabel?.is_active ?? true
+    company_name: "DUBNEWSAI Intelligence",
+    logo_url: "",
+    primary_color: "#22D3EE",
+    secondary_color: "#F59E0B",
+    custom_domain: "",
+    subdomain: "",
+    api_enabled: true,
+    api_rate_limit: 250,
+    is_active: true
   })
   const [plaintextKey, setPlaintextKey] = useState<string | null>(null)
-  const [themeMode, setThemeMode] = useState("dark")
+  const [themeMode, setThemeMode] = useState("system")
 
   useEffect(() => {
     if (notifications?.length) {
@@ -57,8 +65,8 @@ export default function SettingsPage() {
       setWhiteLabelForm({
         company_name: whiteLabel.company_name,
         logo_url: whiteLabel.logo_url || "",
-        primary_color: whiteLabel.primary_color || "#22d3ee",
-        secondary_color: whiteLabel.secondary_color || "#f59e0b",
+        primary_color: whiteLabel.primary_color || "#22D3EE",
+        secondary_color: whiteLabel.secondary_color || "#F59E0B",
         custom_domain: whiteLabel.custom_domain || "",
         subdomain: whiteLabel.subdomain || "",
         api_enabled: whiteLabel.api_enabled,
@@ -81,9 +89,26 @@ export default function SettingsPage() {
     }
   }, [whiteLabelForm.primary_color, whiteLabelForm.secondary_color])
 
+  const whiteLabelValidation = useMemo(() => {
+    const companyName = whiteLabelForm.company_name.trim()
+    const colorPattern = /^#[0-9A-Fa-f]{6}$/
+    const primaryValid = colorPattern.test(whiteLabelForm.primary_color)
+    const secondaryValid = colorPattern.test(whiteLabelForm.secondary_color)
+
+    return {
+      companyName,
+      primaryValid,
+      secondaryValid,
+      canSave: Boolean(companyName) && primaryValid && secondaryValid
+    }
+  }, [whiteLabelForm.company_name, whiteLabelForm.primary_color, whiteLabelForm.secondary_color])
+
   const createApiKey = useMutation({
     mutationFn: async () => {
-      const { data } = await apiClient.post("/settings/api-keys", apiKeyForm)
+      const { data } = await apiClient.post("/settings/api-keys", {
+        ...apiKeyForm,
+        name: apiKeyForm.name.trim()
+      })
       return data as { plaintext_key: string }
     },
     onSuccess: async (data) => {
@@ -94,7 +119,10 @@ export default function SettingsPage() {
 
   const saveWhiteLabel = useMutation({
     mutationFn: async () => {
-      await apiClient.put("/settings/white-label", whiteLabelForm)
+      await apiClient.put("/settings/white-label", {
+        ...whiteLabelForm,
+        company_name: whiteLabelValidation.companyName
+      })
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["settings", "white-label"] })
@@ -108,9 +136,9 @@ export default function SettingsPage() {
       <div className="space-y-8">
         <PremiumPageHero
           eyebrow="Workspace settings"
-          title="Settings should feel like command infrastructure, not a demo page."
-          description="A calmer settings surface for identity, alerts, API access, and white-label controls."
-          chips={["Operator identity", "Inbox posture", "Workspace policy", "Delivery controls"]}
+          title="Settings should stay calm while the platform stays live."
+          description="Identity, inbox controls, API keys, theme, and white-label setup from one cleaner operations surface."
+          chips={["Identity", "Inbox", "API access", "White-label"]}
           stats={[
             {
               label: "Unread inbox",
@@ -128,9 +156,9 @@ export default function SettingsPage() {
               hint: "Hydrated across API and realtime events"
             },
             {
-              label: "Workspace mode",
-              value: "Live monitoring",
-              hint: "Signals continue updating in the background"
+              label: "Theme mode",
+              value: titleCase(themeMode),
+              hint: "Applied across the live workspace"
             }
           ]}
           tone="violet"
@@ -152,9 +180,9 @@ export default function SettingsPage() {
               <p className="story-kicker">Workspace posture</p>
               <h2 className="mt-4 text-3xl font-semibold text-white">Operational defaults</h2>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <SettingTile icon={Workflow} label="Alert delivery" value="Realtime + webhook ready" text="Built for fast follow-up." />
-                <SettingTile icon={Waves} label="Data cadence" value="Continuous refresh" text="Signals stay current in the background." />
-                <SettingTile icon={ShieldCheck} label="Security posture" value="Authenticated workspace" text="Role-aware access is active." />
+                <SettingTile icon={Workflow} label="Alert delivery" value="Realtime + inbox" text="Built for fast follow-up." />
+                <SettingTile icon={Waves} label="Data cadence" value="Always-on refresh" text="Signals stay current in the background." />
+                <SettingTile icon={ShieldCheck} label="Security posture" value="Role-aware access" text="Access is controlled per user." />
                 <SettingTile icon={Building2} label="Deployment mode" value="Production linked" text="Connected to live infrastructure." />
               </div>
             </article>
@@ -165,14 +193,28 @@ export default function SettingsPage() {
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Key name</div>
-                  <input className="input-premium" value={apiKeyForm.name} onChange={(event) => setApiKeyForm((current) => ({ ...current, name: event.target.value }))} />
+                  <input
+                    className="input-premium"
+                    value={apiKeyForm.name}
+                    onChange={(event) => setApiKeyForm((current) => ({ ...current, name: event.target.value }))}
+                  />
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Hourly limit</div>
-                  <input type="number" className="input-premium" value={apiKeyForm.rate_limit_per_hour} onChange={(event) => setApiKeyForm((current) => ({ ...current, rate_limit_per_hour: Number(event.target.value) }))} />
+                  <input
+                    type="number"
+                    className="input-premium"
+                    value={apiKeyForm.rate_limit_per_hour}
+                    onChange={(event) => setApiKeyForm((current) => ({ ...current, rate_limit_per_hour: Number(event.target.value) }))}
+                  />
                 </label>
               </div>
-              <button type="button" onClick={() => createApiKey.mutate()} className="action-premium mt-5" disabled={createApiKey.isPending}>
+              <button
+                type="button"
+                onClick={() => createApiKey.mutate()}
+                className="action-premium mt-5"
+                disabled={createApiKey.isPending || !apiKeyForm.name.trim()}
+              >
                 <KeyRound className="h-4 w-4" />
                 {createApiKey.isPending ? "Creating..." : "Create API key"}
               </button>
@@ -189,17 +231,25 @@ export default function SettingsPage() {
                 </div>
               ) : null}
               <div className="mt-6 space-y-3">
-                {apiKeys.map((item) => (
-                  <div key={item.id} className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{item.name}</div>
-                        <div className="mt-1 text-xs text-white/42">{item.rate_limit_per_hour} req/hr · {item.total_requests} total requests</div>
+                {apiKeys.length ? (
+                  apiKeys.map((item) => (
+                    <div key={item.id} className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-white">{item.name}</div>
+                          <div className="mt-1 text-xs text-white/42">
+                            {item.rate_limit_per_hour} req/hr | {item.total_requests} total requests
+                          </div>
+                        </div>
+                        <div className="text-xs text-white/46">{item.last_used_at ? formatDateTime(item.last_used_at) : "Never used"}</div>
                       </div>
-                      <div className="text-xs text-white/46">{item.last_used_at ? formatDateTime(item.last_used_at) : "Never used"}</div>
                     </div>
+                  ))
+                ) : (
+                  <div className="rounded-[1.4rem] border border-dashed border-white/12 bg-white/[0.02] p-4 text-sm text-white/50">
+                    No API keys yet. Create one when you are ready to expose market, news, or analytics data externally.
                   </div>
-                ))}
+                )}
               </div>
             </article>
           </div>
@@ -222,8 +272,8 @@ export default function SettingsPage() {
 
             <div className="grid gap-4 md:grid-cols-3">
               <ControlPill icon={Bell} label="Unread" value={`${unreadCount}`} />
-              <ControlPill icon={SlidersHorizontal} label="Priority aware" value="Enabled" />
               <ControlPill icon={Workflow} label="Realtime sync" value="Active" />
+              <ControlPill icon={SunMedium} label="Theme" value={titleCase(themeMode)} />
             </div>
 
             {isLoading ? (
@@ -232,78 +282,150 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {realtimeNotifications.map((notification) => (
-                  <article key={notification.id} className="panel-premium flex items-start justify-between gap-4 p-4">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{notification.title}</div>
-                      <p className="mt-2 text-sm leading-7 text-white/56">{notification.message}</p>
-                      <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-white/36">
-                        {titleCase(notification.priority)} | {formatDateTime(notification.created_at)}
-                      </p>
-                    </div>
-                    {!notification.is_read ? (
-                      <button
-                        type="button"
-                        onClick={() => markRead(notification.id)}
-                        className="rounded-full border border-cyan-300/20 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:border-cyan-300/35"
-                      >
-                        Mark read
-                      </button>
-                    ) : null}
-                  </article>
-                ))}
+                {realtimeNotifications.length ? (
+                  realtimeNotifications.map((notification) => (
+                    <article key={notification.id} className="panel-premium flex items-start justify-between gap-4 p-4">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{notification.title}</div>
+                        <p className="mt-2 text-sm leading-7 text-white/56">{notification.message}</p>
+                        <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-white/36">
+                          {titleCase(notification.priority)} | {formatDateTime(notification.created_at)}
+                        </p>
+                      </div>
+                      {!notification.is_read ? (
+                        <button
+                          type="button"
+                          onClick={() => markRead(notification.id)}
+                          className="rounded-full border border-cyan-300/20 px-3 py-2 text-xs font-medium text-cyan-100 transition hover:border-cyan-300/35"
+                        >
+                          Mark read
+                        </button>
+                      ) : null}
+                    </article>
+                  ))
+                ) : (
+                  <div className="panel-premium p-5 text-sm text-white/54">
+                    Your inbox is clear. New alerts, summaries, and workflow prompts will appear here as the workspace updates.
+                  </div>
+                )}
               </div>
             )}
 
             <article className="panel-premium p-6 sm:p-8">
               <p className="story-kicker">White-label</p>
-              <h2 className="mt-4 text-3xl font-semibold text-white">Enterprise branding and delivery controls</h2>
+              <h2 className="mt-4 text-3xl font-semibold text-white">Branding and delivery controls</h2>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/56">
+                Save a stable workspace identity here. Domain conflicts and invalid color values are checked before they become database errors.
+              </p>
+
+              <div className="mt-6 grid gap-3 md:grid-cols-3">
+                {BRAND_PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() =>
+                      setWhiteLabelForm((current) => ({
+                        ...current,
+                        primary_color: preset.primary,
+                        secondary_color: preset.secondary
+                      }))
+                    }
+                    className="rounded-[1.35rem] border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-cyan-300/30"
+                  >
+                    <div className="text-sm font-semibold text-white">{preset.name}</div>
+                    <div className="mt-3 flex gap-2">
+                      <span className="h-8 w-8 rounded-full border border-white/10" style={{ backgroundColor: preset.primary }} />
+                      <span className="h-8 w-8 rounded-full border border-white/10" style={{ backgroundColor: preset.secondary }} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Company name</div>
-                  <input className="input-premium" value={whiteLabelForm.company_name} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, company_name: event.target.value }))} />
+                  <input
+                    className="input-premium"
+                    value={whiteLabelForm.company_name}
+                    onChange={(event) => setWhiteLabelForm((current) => ({ ...current, company_name: event.target.value }))}
+                  />
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Logo URL</div>
-                  <input className="input-premium" value={whiteLabelForm.logo_url} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, logo_url: event.target.value }))} />
+                  <input
+                    className="input-premium"
+                    value={whiteLabelForm.logo_url}
+                    onChange={(event) => setWhiteLabelForm((current) => ({ ...current, logo_url: event.target.value }))}
+                  />
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Primary color</div>
                   <div className="flex items-center gap-3">
-                    <input type="color" className="h-12 w-16 rounded-xl border border-white/10 bg-transparent" value={whiteLabelForm.primary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value }))} />
-                    <input className="input-premium" value={whiteLabelForm.primary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value }))} />
+                    <input
+                      type="color"
+                      className="h-12 w-16 rounded-xl border border-white/10 bg-transparent"
+                      value={whiteLabelForm.primary_color}
+                      onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value.toUpperCase() }))}
+                    />
+                    <input
+                      className="input-premium"
+                      value={whiteLabelForm.primary_color}
+                      onChange={(event) => setWhiteLabelForm((current) => ({ ...current, primary_color: event.target.value.toUpperCase() }))}
+                    />
                   </div>
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Secondary color</div>
                   <div className="flex items-center gap-3">
-                    <input type="color" className="h-12 w-16 rounded-xl border border-white/10 bg-transparent" value={whiteLabelForm.secondary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value }))} />
-                    <input className="input-premium" value={whiteLabelForm.secondary_color} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value }))} />
+                    <input
+                      type="color"
+                      className="h-12 w-16 rounded-xl border border-white/10 bg-transparent"
+                      value={whiteLabelForm.secondary_color}
+                      onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value.toUpperCase() }))}
+                    />
+                    <input
+                      className="input-premium"
+                      value={whiteLabelForm.secondary_color}
+                      onChange={(event) => setWhiteLabelForm((current) => ({ ...current, secondary_color: event.target.value.toUpperCase() }))}
+                    />
                   </div>
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Custom domain</div>
-                  <input className="input-premium" value={whiteLabelForm.custom_domain} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, custom_domain: event.target.value }))} />
+                  <input
+                    className="input-premium"
+                    value={whiteLabelForm.custom_domain}
+                    onChange={(event) => setWhiteLabelForm((current) => ({ ...current, custom_domain: event.target.value }))}
+                  />
                 </label>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Subdomain</div>
-                  <input className="input-premium" value={whiteLabelForm.subdomain} onChange={(event) => setWhiteLabelForm((current) => ({ ...current, subdomain: event.target.value }))} />
-                </label>
-                <label className="block">
-                  <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Theme mode</div>
-                  <select
+                  <input
                     className="input-premium"
-                    value={themeMode}
-                    onChange={(event) => {
-                      setThemeMode(event.target.value)
-                      setTheme(event.target.value)
-                    }}
-                  >
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
-                    <option value="system">System</option>
-                  </select>
+                    value={whiteLabelForm.subdomain}
+                    onChange={(event) => setWhiteLabelForm((current) => ({ ...current, subdomain: event.target.value }))}
+                  />
                 </label>
+                <div className="block">
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">Theme mode</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {THEME_OPTIONS.map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setThemeMode(mode)
+                          setTheme(mode)
+                        }}
+                        className={`rounded-[1rem] border px-3 py-3 text-sm transition ${
+                          themeMode === mode ? "border-cyan-300/35 bg-cyan-300/[0.08] text-white" : "border-white/10 bg-white/[0.03] text-white/64"
+                        }`}
+                      >
+                        {titleCase(mode)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label className="block">
                   <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-white/38">API rate limit</div>
                   <input
@@ -337,21 +459,38 @@ export default function SettingsPage() {
                 <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
                   <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Access model</div>
                   <p className="mt-4 text-sm leading-7 text-white/58">
-                    Feature access is now managed by admins per user instead of through white-label branding settings. Public visitors see News and Market, while signed-in users start with Analytics, Alerts, and Settings plus their default workspace access.
+                    Branding does not control feature access anymore. Admins grant premium workspaces per user, while public visitors keep News and Market and signed-in users start with Analytics, Alerts, and Settings.
                   </p>
                 </div>
               </div>
+
+              {!whiteLabelValidation.canSave ? (
+                <div className="mt-5 rounded-[1.4rem] border border-amber-300/20 bg-amber-300/[0.08] p-4 text-sm text-amber-50">
+                  Use a company name and full 6-digit hex colors like <span className="font-semibold">#22D3EE</span> before saving.
+                </div>
+              ) : null}
+
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 <ControlPill icon={Palette} label="Brand mode" value={whiteLabelForm.is_active ? "Active" : "Paused"} />
                 <ControlPill icon={KeyRound} label="API layer" value={whiteLabelForm.api_enabled ? "Enabled" : "Disabled"} />
-                <ControlPill icon={Workflow} label="Rate limit" value={`${whiteLabelForm.api_rate_limit}/hr`} />
+                <ControlPill icon={SunMedium} label="Theme" value={titleCase(themeMode)} />
               </div>
-              <div className="mt-6 rounded-[1.5rem] border border-white/10 p-5" style={{ backgroundImage: `linear-gradient(135deg, ${whiteLabelForm.primary_color}22, ${whiteLabelForm.secondary_color}22)` }}>
+
+              <div
+                className="mt-6 rounded-[1.5rem] border border-white/10 p-5"
+                style={{ backgroundImage: `linear-gradient(135deg, ${whiteLabelForm.primary_color}22, ${whiteLabelForm.secondary_color}22)` }}
+              >
                 <div className="text-[10px] uppercase tracking-[0.28em] text-white/38">Live preview</div>
-                <div className="mt-3 text-lg font-semibold text-white">{whiteLabelForm.company_name}</div>
-                <p className="mt-2 text-sm text-white/58">Theme, color, and feature settings now preview immediately in the UI before you save.</p>
+                <div className="mt-3 text-lg font-semibold text-white">{whiteLabelValidation.companyName || "Workspace brand"}</div>
+                <p className="mt-2 text-sm text-white/58">Theme and brand colors preview immediately in the workspace before you save.</p>
               </div>
-              <button type="button" onClick={() => saveWhiteLabel.mutate()} className="action-premium mt-6" disabled={saveWhiteLabel.isPending}>
+
+              <button
+                type="button"
+                onClick={() => saveWhiteLabel.mutate()}
+                className="action-premium mt-6"
+                disabled={saveWhiteLabel.isPending || !whiteLabelValidation.canSave}
+              >
                 <Palette className="h-4 w-4" />
                 {saveWhiteLabel.isPending ? "Saving..." : "Save white-label config"}
               </button>

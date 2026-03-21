@@ -202,6 +202,11 @@
   box-shadow: 0 18px 50px -36px rgba(15, 23, 42, 0.18);
 }
 
+.light .action-premium:hover {
+  background-color: rgba(255, 255, 255, 1) !important;
+  border-color: rgba(34, 211, 238, 0.34) !important;
+}
+
 .light .story-kicker {
   color: rgba(51, 65, 85, 0.58) !important;
 }
@@ -231,5 +236,15 @@
 .light [class*="bg-[#080a0e]"],
 .light [class*="bg-[#0a0d12]"] {
   background-color: rgba(248, 250, 252, 0.92) !important;
+}
+
+.light input[type="checkbox"] {
+  accent-color: rgb(var(--brand-secondary-rgb) / 1);
+}
+
+.light select,
+.light input,
+.light textarea {
+  color-scheme: light;
 }
 

@@ -16,13 +16,18 @@ import type {
   WeatherSnapshot
 } from "@/types"
 
+const MARKET_FAST_STALE_TIME = 60 * 1000
+const MARKET_STANDARD_STALE_TIME = 5 * 60 * 1000
+const MARKET_LONG_STALE_TIME = 30 * 60 * 1000
+
 export function useMarketData(limit = 24) {
   return useQuery<MarketStock[]>({
     queryKey: ["market", "stocks", limit],
     queryFn: async () => {
       const { data } = await apiClient.get<MarketStock[]>("/market/stocks", { params: { limit } })
       return data
-    }
+    },
+    staleTime: MARKET_FAST_STALE_TIME
   })
 }
 
@@ -33,7 +38,8 @@ export function useMarketSymbol(symbol: string) {
       const { data } = await apiClient.get<MarketStock>(`/market/symbol/${symbol}`)
       return data
     },
-    enabled: Boolean(symbol)
+    enabled: Boolean(symbol),
+    staleTime: MARKET_FAST_STALE_TIME
   })
 }
 
@@ -43,7 +49,8 @@ export function useMarketOverview() {
     queryFn: async () => {
       const { data } = await apiClient.get<MarketOverviewResponse>("/market/overview")
       return data
-    }
+    },
+    staleTime: MARKET_FAST_STALE_TIME
   })
 }
 
@@ -55,7 +62,8 @@ export function useEconomicIndicators(limit = 12) {
         params: { limit }
       })
       return data
-    }
+    },
+    staleTime: MARKET_STANDARD_STALE_TIME
   })
 }
 
@@ -65,7 +73,8 @@ export function useMarketWeather() {
     queryFn: async () => {
       const { data } = await apiClient.get<WeatherSnapshot | null>("/market/weather")
       return data
-    }
+    },
+    staleTime: MARKET_STANDARD_STALE_TIME
   })
 }
 
@@ -77,7 +86,8 @@ export function useMarketIntelligence(region = "UAE") {
         params: { region }
       })
       return data
-    }
+    },
+    staleTime: MARKET_STANDARD_STALE_TIME
   })
 }
 
@@ -91,7 +101,8 @@ export function usePropertyValuationOptions() {
     queryFn: async () => {
       const { data } = await apiClient.get<PropertyValuationOptionsResponse>("/market/property-valuation/options")
       return data
-    }
+    },
+    staleTime: MARKET_LONG_STALE_TIME
   })
 }
 
@@ -107,6 +118,7 @@ export function usePropertyValuationPreset(location?: string, propertyType = "Ap
       })
       return data
     },
-    enabled: Boolean(location)
+    enabled: Boolean(location),
+    staleTime: MARKET_STANDARD_STALE_TIME
   })
 }

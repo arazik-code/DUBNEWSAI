@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from http import HTTPStatus
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import check_tiered_rate_limit
@@ -33,6 +35,31 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+async def _ensure_unique_white_label_value(
+    db: AsyncSession,
+    *,
+    field_name: str,
+    value: str | None,
+    current_user_id: int,
+) -> None:
+    if value is None:
+        return
+
+    field = getattr(WhiteLabelConfig, field_name)
+    existing = await db.scalar(
+        select(WhiteLabelConfig).where(
+            field == value,
+            WhiteLabelConfig.user_id != current_user_id,
+        )
+    )
+    if existing is not None:
+        label = "custom domain" if field_name == "custom_domain" else "subdomain"
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail=f"This {label} is already in use by another workspace.",
+        )
 
 
 @router.get("/platform-features", response_model=list[PlatformFeatureResponse])
@@ -104,19 +131,40 @@ async def upsert_white_label_config(
     _rate_limit: None = Depends(check_tiered_rate_limit),
 ) -> WhiteLabelConfigResponse:
     normalized_payload = payload.model_dump()
+    normalized_payload["company_name"] = payload.company_name.strip()
     normalized_payload["logo_url"] = _normalize_optional_text(payload.logo_url)
     normalized_payload["custom_domain"] = _normalize_optional_text(payload.custom_domain)
     normalized_payload["subdomain"] = _normalize_optional_text(payload.subdomain)
+    normalized_payload["enabled_features"] = None
+
+    await _ensure_unique_white_label_value(
+        db,
+        field_name="custom_domain",
+        value=normalized_payload["custom_domain"],
+        current_user_id=current_user.id,
+    )
+    await _ensure_unique_white_label_value(
+        db,
+        field_name="subdomain",
+        value=normalized_payload["subdomain"],
+        current_user_id=current_user.id,
+    )
 
     result = await db.execute(select(WhiteLabelConfig).where(WhiteLabelConfig.user_id == current_user.id))
     row = result.scalar_one_or_none()
     if row is None:
-        row = WhiteLabelConfig(user_id=current_user.id, enabled_features=None, **normalized_payload)
+        row = WhiteLabelConfig(user_id=current_user.id, **normalized_payload)
         db.add(row)
     else:
         for key, value in normalized_payload.items():
             setattr(row, key, value)
-        row.enabled_features = None
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail="This domain or subdomain is already assigned to another workspace.",
+        ) from exc
     await db.refresh(row)
     return WhiteLabelConfigResponse.model_validate(row)

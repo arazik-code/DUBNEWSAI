@@ -171,7 +171,12 @@ class FeatureAccessService:
 
     async def list_users(self, db: AsyncSession) -> list[User]:
         result = await db.execute(
-            select(User).where(User.is_active.is_(True)).order_by(User.created_at.asc())
+            select(User)
+            .where(
+                User.is_active.is_(True),
+                User.role != UserRole.ADMIN,
+            )
+            .order_by(User.created_at.asc())
         )
         return list(result.scalars().all())
 

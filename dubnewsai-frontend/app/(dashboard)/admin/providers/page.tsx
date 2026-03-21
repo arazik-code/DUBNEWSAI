@@ -83,8 +83,10 @@ export default function ProvidersAdminPage() {
 
     void fetchData(true)
     const timer = window.setInterval(() => {
-      void fetchData(true)
-    }, 30000)
+      if (!document.hidden) {
+        void fetchData(true)
+      }
+    }, 60000)
 
     return () => window.clearInterval(timer)
   }, [isAdmin])
@@ -234,20 +236,27 @@ export default function ProvidersAdminPage() {
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
             <div className="space-y-3">
-              {accessUsers.map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => setSelectedUserId(account.id)}
-                  className={`w-full rounded-[1.4rem] border p-4 text-left transition ${
-                    selectedUserId === account.id ? "border-cyan-300/35 bg-cyan-300/[0.08]" : "border-white/10 bg-white/[0.03]"
-                  }`}
-                >
-                  <div className="text-sm font-semibold text-white">{account.full_name || account.email}</div>
-                  <div className="mt-1 text-xs text-white/44">{account.email}</div>
-                  <div className="mt-3 text-[10px] uppercase tracking-[0.22em] text-white/38">{titleCase(account.role)}</div>
-                </button>
-              ))}
+              {accessUsers.length ? (
+                accessUsers.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setSelectedUserId(account.id)}
+                    className={`w-full rounded-[1.4rem] border p-4 text-left transition ${
+                      selectedUserId === account.id ? "border-cyan-300/35 bg-cyan-300/[0.08]" : "border-white/10 bg-white/[0.03]"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-white">{account.full_name || account.email}</div>
+                    <div className="mt-1 text-xs text-white/44">{account.email}</div>
+                    <div className="mt-3 text-[10px] uppercase tracking-[0.22em] text-white/38">{titleCase(account.role)}</div>
+                  </button>
+                ))
+              ) : (
+                <EmptyStatePanel
+                  title="No standard users are available yet."
+                  description="Create or invite a non-admin user first, then grant premium workspace access from this panel."
+                />
+              )}
             </div>
 
             <div className="space-y-4">

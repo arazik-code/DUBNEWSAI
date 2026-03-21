@@ -6,6 +6,9 @@ import { apiClient } from "@/lib/api/client"
 import { useAuthStore } from "@/lib/store/authStore"
 import type { InvestmentScore, Portfolio, PortfolioAnalytics, PortfolioAssetCatalogItem, Watchlist } from "@/types"
 
+const PORTFOLIO_STANDARD_STALE_TIME = 60 * 1000
+const PORTFOLIO_LONG_STALE_TIME = 15 * 60 * 1000
+
 export function usePortfolios() {
   const { accessToken, hydrated } = useAuthStore()
 
@@ -16,6 +19,7 @@ export function usePortfolios() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: PORTFOLIO_STANDARD_STALE_TIME,
     retry: false
   })
 }
@@ -30,6 +34,7 @@ export function usePortfolioAnalytics(portfolioId?: number) {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && Boolean(portfolioId),
+    staleTime: PORTFOLIO_STANDARD_STALE_TIME,
     retry: false
   })
 }
@@ -44,6 +49,7 @@ export function useWatchlists() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: PORTFOLIO_STANDARD_STALE_TIME,
     retry: false
   })
 }
@@ -60,6 +66,7 @@ export function useInvestmentScore(symbol?: string, riskProfile = "moderate") {
       return data
     },
     enabled: hydrated && Boolean(accessToken) && Boolean(symbol),
+    staleTime: PORTFOLIO_LONG_STALE_TIME,
     retry: false
   })
 }
@@ -74,6 +81,7 @@ export function usePortfolioAssetCatalog() {
       return data
     },
     enabled: hydrated && Boolean(accessToken),
+    staleTime: PORTFOLIO_LONG_STALE_TIME,
     retry: false
   })
 }

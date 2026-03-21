@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CompetitorCreateRequest(BaseModel):
@@ -107,6 +108,50 @@ class WhiteLabelConfigRequest(BaseModel):
     api_enabled: bool = False
     api_rate_limit: int = Field(default=100, ge=10, le=100000)
     is_active: bool = True
+
+    @field_validator("company_name")
+    @classmethod
+    def validate_company_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Company name is required")
+        return cleaned
+
+    @field_validator("primary_color", "secondary_color")
+    @classmethod
+    def validate_hex_color(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", cleaned):
+            raise ValueError("Colors must use full 6-digit hex values like #22D3EE")
+        return cleaned.upper()
+
+    @field_validator("custom_domain")
+    @classmethod
+    def validate_custom_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().lower().removeprefix("https://").removeprefix("http://").strip("/")
+        if not cleaned:
+            return None
+        if not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}", cleaned):
+            raise ValueError("Enter a valid domain like brand.example.com")
+        return cleaned
+
+    @field_validator("subdomain")
+    @classmethod
+    def validate_subdomain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().lower()
+        if not cleaned:
+            return None
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", cleaned):
+            raise ValueError("Subdomain must use letters, numbers, or hyphens")
+        return cleaned
 
 
 class WhiteLabelConfigResponse(BaseModel):

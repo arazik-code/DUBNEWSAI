@@ -13,6 +13,7 @@ import { PremiumPageHero } from "@/components/ui/premium-page-hero"
 import { apiClient } from "@/lib/api/client"
 import { useInvestmentScore, usePortfolioAnalytics, usePortfolioAssetCatalog, usePortfolios, useWatchlists } from "@/lib/hooks/usePortfolio"
 import { formatCompactCurrency, formatDateTime } from "@/lib/utils/formatters"
+import type { Portfolio, Watchlist } from "@/types"
 
 export default function PortfoliosPage() {
   const queryClient = useQueryClient()
@@ -138,9 +139,17 @@ export default function PortfoliosPage() {
 
   const createPortfolio = useMutation({
     mutationFn: async () => {
-      await apiClient.post("/portfolios", portfolioForm)
+      const { data } = await apiClient.post<Portfolio>("/portfolios", portfolioForm)
+      return data
     },
-    onSuccess: async () => {
+    onSuccess: async (portfolio) => {
+      setSelectedPortfolioId(portfolio.id)
+      setPortfolioForm({
+        name: "Dubai Growth Sleeve",
+        description: "Core UAE and real-estate allocation",
+        portfolio_type: "mixed",
+        base_currency: "AED"
+      })
       await queryClient.invalidateQueries({ queryKey: ["portfolios"] })
     }
   })
@@ -158,9 +167,15 @@ export default function PortfoliosPage() {
 
   const createWatchlist = useMutation({
     mutationFn: async () => {
-      await apiClient.post("/portfolios/watchlists", watchlistForm)
+      const { data } = await apiClient.post<Watchlist>("/portfolios/watchlists", watchlistForm)
+      return data
     },
-    onSuccess: async () => {
+    onSuccess: async (watchlist) => {
+      setSelectedWatchlistId(watchlist.id)
+      setWatchlistForm({
+        name: "Opportunity Radar",
+        description: "Names to monitor for entries and follow-through"
+      })
       await queryClient.invalidateQueries({ queryKey: ["watchlists"] })
     }
   })

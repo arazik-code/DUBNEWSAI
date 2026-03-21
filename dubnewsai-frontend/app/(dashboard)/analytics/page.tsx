@@ -45,7 +45,8 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const response = await apiClient.get<AnalyticsOverview>("/analytics/overview", { params: { days: 7 } })
       return response.data
-    }
+    },
+    staleTime: 5 * 60 * 1000
   })
   const { data: intelligence } = useMarketIntelligence("UAE")
 
