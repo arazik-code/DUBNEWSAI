@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Keep this as a plain string in env vars so platforms like Railway can pass
     # either a single URL or a comma-separated list without JSON encoding.
-    CORS_ORIGINS: str = "http://localhost:3000 https://dubnewsai-yuhw.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:3000 https://dubnewsai.vercel.app"
 
     NEWSAPI_KEY: str = ""
     GNEWS_API_KEY: str = ""
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
-    FRONTEND_URL: str = "https://dubnewsai-yuhw.vercel.app"
+    FRONTEND_URL: str = "https://dubnewsai.vercel.app"
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PREMIUM_MONTHLY_PRICE_ID: str = ""
