@@ -23,13 +23,15 @@ function getApiUrl() {
 export const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json"
-  }
+  },
+  timeout: 15000
 })
 
 const refreshClient = axios.create({
   headers: {
     "Content-Type": "application/json"
-  }
+  },
+  timeout: 15000
 })
 
 refreshClient.interceptors.request.use((config) => {

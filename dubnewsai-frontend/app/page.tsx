@@ -1,301 +1,383 @@
 "use client"
 
-import { motion } from "framer-motion"
+import { motion, useReducedMotion } from "framer-motion"
 import {
   ArrowRight,
-  BarChart3,
   BellRing,
+  Blocks,
+  BrainCircuit,
   Building2,
   CandlestickChart,
+  ChevronRight,
   Globe2,
   Radar,
   ShieldCheck,
+  Sparkles,
   Waves
 } from "lucide-react"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
-import { LandingOrbitScene } from "@/components/ui/landing-orbit-scene"
-import { HeroGeometric } from "@/components/ui/shape-landing-hero"
-import { SparklesCore } from "@/components/ui/sparkles"
-
-const commandStats = [
-  { label: "Live feeds", value: "20+" },
-  { label: "Coverage", value: "News + Equities + FX" },
-  { label: "Update cycle", value: "Minutes, not hours" }
+const heroMetrics = [
+  { label: "Coverage", value: "Dubai, UAE, GCC" },
+  { label: "Signal layers", value: "News, market, macro, alerts" },
+  { label: "Decision tempo", value: "Minutes, not hours" }
 ] as const
 
-const bentoCards: ReadonlyArray<{
-  eyebrow: string
-  title: string
-  copy: string
-  icon: typeof Radar
-  span?: string
-}> = [
+const platformPillars = [
   {
-    eyebrow: "Signal Density",
-    title: "News, listed developers, FX, macro, and market context in one platform.",
+    eyebrow: "Signal clarity",
+    title: "See the story, the symbol, and the market backdrop in one view.",
     copy:
-      "DUBNEWSAI connects the story, the symbol, and the wider market backdrop so users can understand what is happening in Dubai without stitching tools together.",
+      "DUBNEWSAI is designed to stop context fragmentation. News, property pressure, listed developers, FX, and macro signals connect inside one operating surface.",
     icon: Radar,
-    span: "lg:col-span-2"
+    accent: "from-cyan-300/30 to-transparent"
   },
   {
-    eyebrow: "Coverage",
-    title: "Dubai and UAE market intelligence.",
-    copy: "Track property headlines, DFM and ADX names, business updates, and regional context from multiple sources in one flow.",
-    icon: Globe2
+    eyebrow: "Operator workflow",
+    title: "Move from discovery to action without changing mental gears.",
+    copy:
+      "Watchlists, alerts, analytics, investor intelligence, and executive views are arranged as a coherent decision system instead of separate product islands.",
+    icon: BrainCircuit,
+    accent: "from-amber-300/30 to-transparent"
   },
   {
-    eyebrow: "Trust",
-    title: "Provider-aware intelligence.",
-    copy: "Source context, fallback handling, and enrichment signals help users judge confidence instead of treating every datapoint the same.",
-    icon: ShieldCheck
-  },
-  {
-    eyebrow: "Workflow",
-    title: "Built for active monitoring.",
-    copy: "Watch movers, read the story, and react faster with alerts, on-platform article detail, and market context side by side.",
-    icon: BellRing
-  },
-  {
-    eyebrow: "Audience",
-    title: "Made for investors, brokers, operators, and advisors.",
-    copy: "DUBNEWSAI turns fragmented Dubai market signals into a readable command center that supports faster and more confident decisions.",
-    icon: CandlestickChart,
-    span: "lg:col-span-2"
+    eyebrow: "Trust posture",
+    title: "Provider-aware, quality-aware, and built for real production use.",
+    copy:
+      "The platform surfaces source health, confidence, and structured fallback behavior so users can trust what they are seeing under real market pressure.",
+    icon: ShieldCheck,
+    accent: "from-emerald-300/30 to-transparent"
   }
-]
+] as const
 
-const intelligenceRows = [
+const workflowSteps = [
   {
-    title: "Live market briefings",
-    text: "Follow UAE symbols, indices, FX, and macro pressure without switching between disconnected dashboards.",
-    icon: Waves
+    step: "01",
+    title: "Absorb the market quickly",
+    text: "Open a command surface built to communicate pressure, movement, and concentration without throwing noise at the user."
   },
   {
-    title: "Readable news detail",
-    text: "Open a story and read the important context directly on DUBNEWSAI before deciding whether you need the original source.",
-    icon: Building2
+    step: "02",
+    title: "Validate the signal",
+    text: "Cross-check headlines with listed names, location-level property context, technical pressure, and market-wide momentum."
   },
   {
-    title: "Decision-ready dashboards",
-    text: "See only the most useful market and news signals first, then go deeper into dedicated pages when you need more detail.",
-    icon: BarChart3
+    step: "03",
+    title: "Act from one workspace",
+    text: "Shift into alerts, investor tools, competitive intelligence, or executive views without losing the original context."
   }
+] as const
+
+const audienceCards = [
+  { title: "Investors", copy: "Track portfolios, watchlists, and price setups with local market context.", icon: CandlestickChart },
+  { title: "Brokerage teams", copy: "Run a cleaner workflow for discovery, monitoring, and client-facing market interpretation.", icon: Building2 },
+  { title: "Operators", copy: "Turn scattered sources into one monitored intelligence system that actually feels operational.", icon: Blocks },
+  { title: "Advisory leaders", copy: "Move from broad Dubai market awareness into strategic and executive-level action.", icon: Waves }
+] as const
+
+const systemHighlights = [
+  "Fast-loading dashboard architecture",
+  "Role-aware feature access",
+  "Per-user admin grants",
+  "Curated prediction and property universes",
+  "Investor and competitor intelligence layers",
+  "Premium light and dark mode support"
 ] as const
 
 export default function LandingPage() {
+  const reducedMotion = useReducedMotion()
+
   return (
-    <div className="overflow-x-hidden bg-[#050506] text-white">
+    <div className="min-h-screen overflow-x-hidden bg-[#f4efe6] text-slate-950 dark:bg-[#050506] dark:text-white">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.1),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.12),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.84),transparent_22%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.08),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_18%)]" />
+      <div className="pointer-events-none fixed inset-0 opacity-40 [background-image:linear-gradient(rgba(148,163,184,0.09)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.09)_1px,transparent_1px)] [background-size:84px_84px] dark:opacity-20 dark:[background-image:linear-gradient(rgba(255,255,255,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.045)_1px,transparent_1px)]" />
+
       <LandingNav />
 
-      <HeroGeometric
-        badge="Dubai Market Intelligence"
-        title1="Know Dubai"
-        title2="before the market moves"
-        description="DUBNEWSAI brings together Dubai market news, listed developers, FX, macro indicators, and live alerts so investors and operators can act with context instead of guesswork."
-        actions={
-          <>
-            <Link
-              href="/news"
-              className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-white/90"
-            >
-              Explore news
-            </Link>
-            <Link
-              href="/market"
-              className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
-            >
-              View market
-            </Link>
-          </>
-        }
-        meta={
-          <div className="grid gap-3 sm:grid-cols-3">
-            {commandStats.map((stat) => (
-              <div key={stat.label} className="rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-4 backdrop-blur-xl">
-                <div className="text-[10px] uppercase tracking-[0.35em] text-white/45">{stat.label}</div>
-                <div className="mt-3 text-sm font-medium text-white/88">{stat.value}</div>
-              </div>
-            ))}
-          </div>
-        }
-      >
-        <LandingOrbitScene />
-      </HeroGeometric>
-
-      <section className="relative overflow-hidden border-t border-white/10 py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_30%)]" />
-        <div className="mx-auto grid max-w-7xl gap-16 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.25 }}
-            transition={{ duration: 0.8 }}
-            className="relative"
-          >
-            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0d12] p-8">
-              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-              <div className="relative h-[23rem] overflow-hidden rounded-[1.5rem] bg-[#020308]">
-                <SparklesCore
-                  background="transparent"
-                  minSize={0.4}
-                  maxSize={1}
-                  particleDensity={180}
-                  className="absolute inset-0 h-full w-full"
-                  particleColor="#f8fafc"
-                  speed={0.6}
-                />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.24),transparent_18%),linear-gradient(180deg,rgba(8,15,26,0)_0%,rgba(8,15,26,0.85)_90%)]" />
-                <div className="absolute inset-x-8 bottom-8">
-                  <div className="text-[10px] uppercase tracking-[0.45em] text-cyan-100/50">Why DUBNEWSAI</div>
-                  <h2 className="mt-4 max-w-md text-4xl font-semibold leading-tight tracking-[-0.04em]">
-                    One place to read the story, track the symbol, and understand the context.
-                  </h2>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            {bentoCards.map((card, index) => {
-              const Icon = card.icon
-
-              return (
-                <motion.article
-                  key={card.title}
-                  initial={{ opacity: 0, y: 26 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.2 }}
-                  transition={{ duration: 0.72, delay: index * 0.08 }}
-                  className={`rounded-[2rem] border border-white/10 bg-white/[0.03] p-7 backdrop-blur-xl ${card.span || ""}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase tracking-[0.35em] text-white/42">{card.eyebrow}</span>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-cyan-100">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <h3 className="mt-8 max-w-xl text-2xl font-semibold leading-tight tracking-[-0.03em] text-white">
-                    {card.title}
-                  </h3>
-                  <p className="mt-4 max-w-2xl text-sm leading-7 text-white/58">{card.copy}</p>
-                </motion.article>
-              )
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-white/10 py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr]">
+      <main className="relative">
+        <section className="relative overflow-hidden px-4 pb-20 pt-28 sm:px-6 lg:px-8 lg:pb-28 lg:pt-32">
+          <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-[1.03fr_0.97fr] lg:items-end">
             <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.25 }}
-              transition={{ duration: 0.7 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 22 }}
+              animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+              className="relative"
             >
-              <p className="text-[10px] uppercase tracking-[0.45em] text-amber-200/58">How the platform helps</p>
-              <h2 className="mt-5 max-w-2xl text-4xl font-semibold leading-tight tracking-[-0.04em] sm:text-5xl">
-                Built to help users understand what matters in Dubai, faster.
-              </h2>
-              <p className="mt-6 max-w-xl text-base leading-8 text-white/58">
-                From breaking headlines and developer coverage to FX, macro, and market boards, DUBNEWSAI turns scattered information into one clear operating view.
-              </p>
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/78 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-600 shadow-[0_18px_60px_-38px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.05] dark:text-white/68">
+                <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                Dubai market intelligence system
+              </div>
+
+              <div className="mt-8 max-w-4xl">
+                <p className="font-editorial text-[1.02rem] italic tracking-[0.05em] text-slate-500 dark:text-white/42">
+                  Built for investors, operators, and leaders who need to understand Dubai before they commit.
+                </p>
+                <h1 className="mt-5 font-display text-[3.7rem] font-bold leading-[0.94] tracking-[-0.07em] text-slate-950 sm:text-[4.8rem] lg:text-[6.7rem] dark:text-white">
+                  A sharper way
+                  <span className="block bg-[linear-gradient(135deg,#0f172a,#0ea5e9,#f59e0b)] bg-clip-text text-transparent dark:bg-[linear-gradient(135deg,#ffffff,#67e8f9,#fde68a)]">
+                    to read Dubai.
+                  </span>
+                </h1>
+                <p className="mt-7 max-w-2xl text-base leading-8 text-slate-600 dark:text-white/58 sm:text-lg">
+                  DUBNEWSAI brings together market-moving headlines, listed developers, property intelligence, macro context, predictions, alerts, and executive workflow into one premium operating surface.
+                </p>
+              </div>
+
+              <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+                <Link
+                  href="/news"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                >
+                  Open intelligence feed
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="/market"
+                  className="inline-flex items-center justify-center rounded-full border border-slate-300/70 bg-white/78 px-6 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-cyan-300/50 hover:text-slate-950 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/76 dark:hover:text-white"
+                >
+                  Explore market stack
+                </Link>
+              </div>
+
+              <div className="mt-10 grid gap-3 sm:grid-cols-3">
+                {heroMetrics.map((metric, index) => (
+                  <motion.div
+                    key={metric.label}
+                    initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+                    animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                    transition={{ duration: 0.65, delay: 0.08 * index }}
+                    className="rounded-[1.8rem] border border-slate-300/70 bg-white/82 px-5 py-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.26)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04] dark:shadow-[0_24px_80px_-44px_rgba(0,0,0,0.82)]"
+                  >
+                    <div className="text-[10px] uppercase tracking-[0.32em] text-slate-500 dark:text-white/42">{metric.label}</div>
+                    <div className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">{metric.value}</div>
+                  </motion.div>
+                ))}
+              </div>
             </motion.div>
 
-            <div className="space-y-4">
-              {intelligenceRows.map((row, index) => {
-                const Icon = row.icon
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 26 }}
+              animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, delay: 0.1 }}
+              className="relative"
+            >
+              <div className="absolute inset-0 rounded-[2.8rem] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.22),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.18),transparent_36%)] blur-3xl" />
+              <div className="relative overflow-hidden rounded-[2.8rem] border border-slate-300/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(241,245,249,0.82))] p-4 shadow-[0_44px_120px_-58px_rgba(15,23,42,0.28)] backdrop-blur-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] dark:shadow-[0_44px_120px_-58px_rgba(0,0,0,0.9)]">
+                <HeroCommandPanel reducedMotion={Boolean(reducedMotion)} />
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        <section className="border-t border-slate-300/70 px-4 py-20 sm:px-6 lg:px-8 dark:border-white/10">
+          <div className="mx-auto max-w-[1440px]">
+            <div className="grid gap-6 lg:grid-cols-3">
+              {platformPillars.map((pillar, index) => {
+                const Icon = pillar.icon
 
                 return (
-                  <motion.div
-                    key={row.title}
-                    initial={{ opacity: 0, x: 20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true, amount: 0.25 }}
-                    transition={{ duration: 0.7, delay: index * 0.08 }}
-                    className="group rounded-[2rem] border border-white/10 bg-white/[0.03] p-6 transition hover:border-white/20 hover:bg-white/[0.05]"
+                  <motion.article
+                    key={pillar.title}
+                    initial={reducedMotion ? false : { opacity: 0, y: 24 }}
+                    whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.2 }}
+                    transition={{ duration: 0.7, delay: index * 0.06 }}
+                    className="group relative overflow-hidden rounded-[2.2rem] border border-slate-300/70 bg-white/84 p-7 shadow-[0_32px_90px_-54px_rgba(15,23,42,0.24)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04] dark:shadow-[0_32px_90px_-54px_rgba(0,0,0,0.82)]"
                   >
-                    <div className="flex items-start gap-4">
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-amber-100">
-                        <Icon className="h-5 w-5" />
+                    <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${pillar.accent} opacity-70`} />
+                    <div className="relative">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] uppercase tracking-[0.32em] text-slate-500 dark:text-white/40">{pillar.eyebrow}</span>
+                        <div className="rounded-2xl border border-slate-300/70 bg-white/84 p-3 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-cyan-100">
+                          <Icon className="h-5 w-5" />
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-xl font-semibold tracking-[-0.03em]">{row.title}</h3>
-                        <p className="mt-3 max-w-2xl text-sm leading-7 text-white/56">{row.text}</p>
-                      </div>
+                      <h2 className="mt-8 text-[1.85rem] font-semibold leading-tight tracking-[-0.04em] text-slate-950 dark:text-white">
+                        {pillar.title}
+                      </h2>
+                      <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-white/56">{pillar.copy}</p>
                     </div>
-                  </motion.div>
+                  </motion.article>
                 )
               })}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="border-t border-white/10 py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.25 }}
-            transition={{ duration: 0.8 }}
-            className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-8 py-10 shadow-[0_40px_140px_-50px_rgba(0,0,0,0.85)] sm:px-12"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.1),transparent_22%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.1),transparent_22%)]" />
-            <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.45em] text-white/46">Start from one source of truth</p>
-                <h2 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.04em] sm:text-5xl">
-                  Follow Dubai real-estate news and market intelligence from one premium platform.
-                </h2>
-                <p className="mt-5 max-w-2xl text-base leading-8 text-white/56">
-                  Open the news feed, monitor the market board, and move into deeper analytics or alerts only when you need them. Every page is tuned to stay fast, readable, and useful under real daily use.
-                </p>
-              </div>
+        <section className="px-4 py-20 sm:px-6 lg:px-8">
+          <div className="mx-auto grid max-w-[1440px] gap-8 lg:grid-cols-[0.88fr_1.12fr]">
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 24 }}
+              whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.8 }}
+              className="rounded-[2.4rem] border border-slate-300/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.84))] p-8 shadow-[0_34px_90px_-56px_rgba(15,23,42,0.25)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] dark:shadow-[0_34px_90px_-56px_rgba(0,0,0,0.84)]"
+            >
+              <div className="text-[10px] uppercase tracking-[0.34em] text-slate-500 dark:text-white/42">Operating rhythm</div>
+              <h2 className="mt-5 font-display text-4xl font-semibold leading-tight tracking-[-0.05em] text-slate-950 dark:text-white">
+                Designed to help people think clearly under market pressure.
+              </h2>
+              <p className="mt-5 max-w-xl text-base leading-8 text-slate-600 dark:text-white/58">
+                The system is being shaped around one standard: less friction between information, interpretation, and action.
+              </p>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Link
-                  href="/market"
-                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-white/90"
-                >
-                  View market
-                </Link>
-                <Link
-                  href="/news"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
-                >
-                  Open news
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+              <div className="mt-10 space-y-4">
+                {workflowSteps.map((item, index) => (
+                  <motion.div
+                    key={item.step}
+                    initial={reducedMotion ? false : { opacity: 0, x: -18 }}
+                    whileInView={reducedMotion ? undefined : { opacity: 1, x: 0 }}
+                    viewport={{ once: true, amount: 0.2 }}
+                    transition={{ duration: 0.65, delay: index * 0.08 }}
+                    className="rounded-[1.6rem] border border-slate-300/70 bg-white/76 p-5 dark:border-white/10 dark:bg-white/[0.03]"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-slate-300/70 bg-white/85 text-sm font-semibold text-slate-900 dark:border-white/10 dark:bg-white/[0.05] dark:text-white">
+                        {item.step}
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950 dark:text-white">{item.title}</h3>
+                        <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-white/56">{item.text}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
+            </motion.div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              {audienceCards.map((item, index) => {
+                const Icon = item.icon
+                return (
+                  <motion.article
+                    key={item.title}
+                    initial={reducedMotion ? false : { opacity: 0, y: 24 }}
+                    whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.2 }}
+                    transition={{ duration: 0.7, delay: index * 0.05 }}
+                    className="rounded-[2rem] border border-slate-300/70 bg-white/84 p-6 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.24)] dark:border-white/10 dark:bg-white/[0.03] dark:shadow-[0_24px_70px_-46px_rgba(0,0,0,0.82)]"
+                  >
+                    <div className="inline-flex rounded-2xl border border-slate-300/70 bg-white/85 p-3 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-amber-100">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="mt-8 text-2xl font-semibold tracking-[-0.03em] text-slate-950 dark:text-white">{item.title}</h3>
+                    <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-white/56">{item.copy}</p>
+                  </motion.article>
+                )
+              })}
             </div>
-          </motion.div>
-        </div>
-      </section>
+          </div>
+        </section>
+
+        <section className="border-y border-slate-300/70 px-4 py-20 sm:px-6 lg:px-8 dark:border-white/10">
+          <div className="mx-auto max-w-[1440px]">
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+              whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.75 }}
+              className="overflow-hidden rounded-[2.6rem] border border-slate-300/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.88))] p-8 shadow-[0_44px_120px_-58px_rgba(15,23,42,0.3)] dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] dark:shadow-[0_44px_120px_-58px_rgba(0,0,0,0.9)] sm:p-10"
+            >
+              <div className="grid gap-10 lg:grid-cols-[0.98fr_1.02fr]">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.34em] text-slate-500 dark:text-white/42">Quality standard</div>
+                  <h2 className="mt-5 font-display text-4xl font-semibold leading-tight tracking-[-0.05em] text-slate-950 dark:text-white sm:text-5xl">
+                    Every layer should feel like part of one system.
+                  </h2>
+                  <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-white/58">
+                    That includes performance, access control, predictive workflows, investor tools, competitor intelligence, and the visual polish that tells users they are working inside something serious.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {systemHighlights.map((item, index) => (
+                    <motion.div
+                      key={item}
+                      initial={reducedMotion ? false : { opacity: 0, scale: 0.98 }}
+                      whileInView={reducedMotion ? undefined : { opacity: 1, scale: 1 }}
+                      viewport={{ once: true, amount: 0.2 }}
+                      transition={{ duration: 0.55, delay: index * 0.04 }}
+                      className="flex items-center gap-3 rounded-[1.5rem] border border-slate-300/70 bg-white/76 px-4 py-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/74"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300/70 bg-white/80 dark:border-white/10 dark:bg-white/[0.05]">
+                        <ChevronRight className="h-4 w-4" />
+                      </span>
+                      <span>{item}</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        <section className="px-4 py-20 sm:px-6 lg:px-8 lg:py-24">
+          <div className="mx-auto max-w-[1440px]">
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+              whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.8 }}
+              className="relative overflow-hidden rounded-[2.8rem] border border-slate-300/70 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(15,23,42,0.78))] px-8 py-10 text-white shadow-[0_46px_130px_-62px_rgba(15,23,42,0.42)] dark:border-white/10"
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.16),transparent_28%)]" />
+              <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.36em] text-white/44">Enter the platform</div>
+                  <h2 className="mt-5 font-display text-4xl font-semibold leading-tight tracking-[-0.05em] sm:text-5xl">
+                    Start with the public market and news surface, then unlock the full operating stack.
+                  </h2>
+                  <p className="mt-5 max-w-2xl text-base leading-8 text-white/60">
+                    DUBNEWSAI is being shaped as a premium intelligence environment for Dubai. The public face should feel polished. The product underneath should feel fast, sharp, and trustworthy.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Link
+                    href="/market"
+                    className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+                  >
+                    Explore market
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-white/[0.1]"
+                  >
+                    Request access
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      </main>
     </div>
   )
 }
 
 function LandingNav() {
   return (
-    <div className="fixed inset-x-0 top-0 z-50">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
-        <Link href="/" className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/30 px-4 py-2 backdrop-blur-xl">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-950">D</span>
-          <span className="text-xs font-semibold uppercase tracking-[0.42em] text-white/78">DUBNEWSAI</span>
+    <div className="sticky top-0 z-50 px-4 pt-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between rounded-full border border-slate-300/70 bg-white/82 px-4 py-3 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.28)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#050506]/78 dark:shadow-[0_24px_80px_-48px_rgba(0,0,0,0.88)]">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300/70 bg-white text-sm font-black text-slate-950 dark:border-white/10 dark:bg-white dark:text-slate-950">
+            DN
+          </div>
+          <div>
+            <div className="font-display text-sm font-bold tracking-[0.28em] text-slate-900 dark:text-white">DUBNEWSAI</div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 dark:text-white/38">Dubai intelligence platform</div>
+          </div>
         </Link>
 
-        <div className="hidden items-center gap-3 md:flex">
-          <NavLink href="/news">News</NavLink>
-          <NavLink href="/market">Market</NavLink>
-          <NavLink href="/login">Login</NavLink>
+        <div className="hidden items-center gap-2 md:flex">
+          <LandingNavLink href="/news">News</LandingNavLink>
+          <LandingNavLink href="/market">Market</LandingNavLink>
+          <LandingNavLink href="/login">Login</LandingNavLink>
           <Link
             href="/register"
-            className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-white/92"
+            className="inline-flex items-center justify-center rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
           >
             Get access
           </Link>
@@ -305,13 +387,128 @@ function LandingNav() {
   )
 }
 
-function NavLink({ href, children }: { href: string; children: ReactNode }) {
+function LandingNavLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-4 py-2 text-sm font-medium text-white/68 backdrop-blur-xl transition hover:text-white"
+      className="inline-flex items-center rounded-full border border-slate-300/70 bg-white/76 px-4 py-2 text-sm font-medium text-slate-600 transition hover:text-slate-950 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/66 dark:hover:text-white"
     >
       {children}
     </Link>
+  )
+}
+
+function HeroCommandPanel({ reducedMotion }: { reducedMotion: boolean }) {
+  return (
+    <div className="relative overflow-hidden rounded-[2.2rem] border border-slate-300/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.9))] p-5 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(12,16,24,0.98),rgba(8,10,14,0.96))]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.14),transparent_30%)]" />
+
+      <div className="relative space-y-4">
+        <div className="flex items-center justify-between rounded-[1.35rem] border border-slate-300/70 bg-white/86 px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 dark:text-white/40">Live operating surface</div>
+            <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">DUBNEWSAI command brief</div>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-300/12 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-100/82">
+            <BellRing className="h-3.5 w-3.5" />
+            Live
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="rounded-[1.7rem] border border-slate-300/70 bg-white/86 p-5 dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 dark:text-white/40">Signal blend</div>
+                <h3 className="mt-4 font-display text-3xl font-semibold leading-tight tracking-[-0.04em] text-slate-950 dark:text-white">
+                  From headline to board pressure without losing the thread.
+                </h3>
+              </div>
+              <div className="rounded-2xl border border-slate-300/70 bg-white/84 p-3 text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-cyan-100">
+                <Globe2 className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {[
+                ["News flow", "Dubai, UAE, GCC"],
+                ["Markets", "DFM, ADX, FX"],
+                ["Context", "Macro, sentiment, property"]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[1.1rem] border border-slate-300/70 bg-white/82 px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500 dark:text-white/38">{label}</div>
+                  <div className="mt-2 text-sm font-medium text-slate-900 dark:text-white/82">{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-[1.4rem] border border-slate-300/70 bg-[linear-gradient(135deg,rgba(34,211,238,0.1),rgba(255,255,255,0.78))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(34,211,238,0.1),rgba(255,255,255,0.03))]">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 dark:text-white/38">Today&apos;s market read</div>
+              <div className="mt-3 flex items-start gap-3">
+                <Radar className="mt-1 h-4 w-4 text-amber-400" />
+                <p className="text-sm leading-7 text-slate-700 dark:text-white/60">
+                  Dubai intelligence now feels like one connected decision system instead of separate feeds, dashboards, and tabs.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <FloatingPanel reducedMotion={reducedMotion} delay={0} title="Watched names" kicker="DFM focus">
+              {[
+                ["EMAAR", "+1.84%", "text-emerald-600 dark:text-emerald-300"],
+                ["ALDAR", "+0.92%", "text-emerald-600 dark:text-emerald-300"],
+                ["DAMAC", "Alert", "text-amber-600 dark:text-amber-200"]
+              ].map(([symbol, move, tone]) => (
+                <div key={symbol} className="flex items-center justify-between rounded-[1rem] border border-slate-300/70 bg-white/82 px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white">{symbol}</span>
+                  <span className={`text-xs font-medium ${tone}`}>{move}</span>
+                </div>
+              ))}
+            </FloatingPanel>
+
+            <FloatingPanel reducedMotion={reducedMotion} delay={0.08} title="Platform posture" kicker="System quality">
+              {[
+                "Provider-aware confidence",
+                "Per-user access control",
+                "Investor and competitor intelligence"
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-[1rem] border border-slate-300/70 bg-white/82 px-3 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/66">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </FloatingPanel>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FloatingPanel({
+  reducedMotion,
+  delay,
+  title,
+  kicker,
+  children
+}: {
+  reducedMotion: boolean
+  delay: number
+  title: string
+  kicker: string
+  children: ReactNode
+}) {
+  return (
+    <motion.div
+      initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+      animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: 0.65, delay }}
+      className="rounded-[1.7rem] border border-slate-300/70 bg-white/86 p-5 shadow-[0_20px_60px_-42px_rgba(15,23,42,0.24)] dark:border-white/10 dark:bg-white/[0.04] dark:shadow-[0_20px_60px_-42px_rgba(0,0,0,0.82)]"
+    >
+      <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 dark:text-white/40">{kicker}</div>
+      <div className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{title}</div>
+      <div className="mt-4 space-y-3">{children}</div>
+    </motion.div>
   )
 }

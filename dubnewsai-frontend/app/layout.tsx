@@ -34,9 +34,28 @@ const editorial = Merriweather({
 
 export const metadata: Metadata = {
   metadataBase: new URL(getDefaultAppUrl(process.env.NEXT_PUBLIC_APP_URL)),
-  title: "DUBNEWSAI - Dubai Real Estate Intelligence Platform",
-  description: "Advanced real-time intelligence for Dubai real estate market",
-  keywords: ["Dubai", "Real Estate", "Market Intelligence", "AI", "Analytics"]
+  title: {
+    default: "DUBNEWSAI | Dubai Intelligence Platform",
+    template: "%s | DUBNEWSAI"
+  },
+  description: "Premium Dubai market intelligence across news, listed developers, property, macro, predictions, alerts, and executive workflows.",
+  keywords: ["Dubai", "Market Intelligence", "Real Estate", "Analytics", "Investing", "UAE", "Property"],
+  alternates: {
+    canonical: "/"
+  },
+  openGraph: {
+    title: "DUBNEWSAI | Dubai Intelligence Platform",
+    description: "A premium command surface for Dubai news, market signals, property intelligence, investor workflows, and executive monitoring.",
+    url: "/",
+    siteName: "DUBNEWSAI",
+    locale: "en_US",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "DUBNEWSAI | Dubai Intelligence Platform",
+    description: "Dubai news, market signals, property intelligence, alerts, and executive workflows in one premium platform."
+  }
 }
 
 export default function RootLayout({
