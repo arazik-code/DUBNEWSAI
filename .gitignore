@@ -17,5 +17,3 @@ dubnewsai-frontend/node_modules/
 dubnewsai-frontend/.next/
 dubnewsai-frontend/.env.local
 *.tsbuildinfo
-
-.vercel
