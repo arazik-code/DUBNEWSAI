@@ -32,8 +32,6 @@ from app.core.monitoring import BetterStackMonitor
 from app.core.redis_publisher import redis_publisher
 from app.core.rate_limit import limiter
 from app.database import engine, get_db
-from app.models import *  # noqa: F401,F403
-from app.models.base import Base
 from app.services.embedded_sync_service import EmbeddedSyncService
 
 settings = get_settings()
@@ -45,8 +43,6 @@ DatabaseOptimizer.setup_query_logging()
 async def lifespan(_: FastAPI):
     logger.info("Starting DUBNEWSAI backend")
     async with engine.begin() as connection:
-        if settings.DATABASE_URL.startswith("sqlite+aiosqlite:///"):
-            await connection.run_sync(Base.metadata.create_all)
         await connection.execute(text("SELECT 1"))
     await cache.connect()
     await redis_publisher.connect()
