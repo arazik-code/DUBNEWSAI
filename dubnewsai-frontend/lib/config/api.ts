@@ -1,8 +1,8 @@
 const LOCAL_API_URL = "http://localhost:8000/api/v1"
-const PRODUCTION_API_URL = "https://dubnewsai-production.up.railway.app/api/v1"
+const PRODUCTION_API_URL = "https://dubnewsai-api-production.up.railway.app/api/v1"
 const PRODUCTION_APP_URL = "https://dubnewsai.vercel.app"
 const LOCAL_WS_URL = "ws://localhost:8000"
-const PRODUCTION_WS_URL = "wss://dubnewsai-production.up.railway.app"
+const PRODUCTION_WS_URL = "wss://dubnewsai-api-production.up.railway.app"
 
 function isLocalHostname(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1"
