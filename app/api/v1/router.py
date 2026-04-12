@@ -8,6 +8,7 @@ from app.api.v1 import (
     competitors,
     executive,
     market,
+    mobile,
     news,
     notifications,
     portfolios,
@@ -22,6 +23,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(news.router)
 api_router.include_router(market.router)
+api_router.include_router(mobile.router)
 api_router.include_router(portfolios.router)
 api_router.include_router(competitors.router)
 api_router.include_router(predictions.router)
