@@ -1,4 +1,7 @@
-from datetime import datetime, timezone
+import asyncio
+import math
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from loguru import logger
 from sqlalchemy import and_, desc, func, select
@@ -8,12 +11,144 @@ from app.core.cache import cache
 from app.core.metrics import market_updates
 from app.integrations.alpha_vantage_client import AlphaVantageClient
 from app.integrations.free_data_sources import FreeDataAggregator
-from app.schemas.market_data import MarketDataResponse
+from app.models.sources import DataProvider
+from app.schemas.market_data import CurrencyRateResponse, EconomicIndicatorResponse, MarketDataResponse
 from app.models.market_data import CurrencyRate, EconomicIndicator, MarketData, MarketType, StockExchange, WatchlistSymbol
+from app.services.aggregation.market_aggregator import (
+    COMMODITY_SYMBOLS,
+    GLOBAL_REALESTATE_SYMBOLS,
+    INDEX_SYMBOLS,
+    UAE_CORE_SYMBOLS,
+    MarketSymbolSpec,
+    market_aggregator,
+)
 
 
 class MarketService:
     MAX_DATABASE_VOLUME = 2_147_483_647
+    MARKET_REFRESH_COOLDOWN = timedelta(minutes=3)
+    SNAPSHOT_FRESHNESS_WINDOW = timedelta(hours=8)
+    _market_refresh_lock: asyncio.Lock = asyncio.Lock()
+    _last_market_refresh_attempt: datetime | None = None
+
+    @staticmethod
+    def _sanitize_float(value: Any, default: float | None = None) -> float | None:
+        if value is None:
+            return default
+        try:
+            parsed = float(value)
+        except Exception:
+            return default
+        if not math.isfinite(parsed):
+            return default
+        return parsed
+
+    @classmethod
+    def _serialize_market_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(payload)
+        sanitized["price"] = cls._sanitize_float(sanitized.get("price"), 0.0) or 0.0
+        sanitized["open_price"] = cls._sanitize_float(sanitized.get("open_price"))
+        sanitized["high_price"] = cls._sanitize_float(sanitized.get("high_price"))
+        sanitized["low_price"] = cls._sanitize_float(sanitized.get("low_price"))
+        sanitized["previous_close"] = cls._sanitize_float(sanitized.get("previous_close"))
+        sanitized["change"] = cls._sanitize_float(sanitized.get("change"), 0.0) or 0.0
+        sanitized["change_percent"] = cls._sanitize_float(sanitized.get("change_percent"), 0.0) or 0.0
+        sanitized["market_cap"] = cls._sanitize_float(sanitized.get("market_cap"))
+        sanitized["data_quality_score"] = cls._sanitize_float(sanitized.get("data_quality_score"))
+        sanitized["volume"] = cls._sanitize_volume(sanitized.get("volume"))
+        return sanitized
+
+    @classmethod
+    def _serialize_market_row(cls, row: MarketData) -> dict[str, Any]:
+        return cls._serialize_market_payload(
+            MarketDataResponse.model_validate(row).model_dump(mode="json")
+        )
+
+    @classmethod
+    def _serialize_currency_rate(cls, row: CurrencyRate) -> dict[str, Any]:
+        payload = CurrencyRateResponse.model_validate(row).model_dump(mode="json")
+        payload["rate"] = cls._sanitize_float(payload.get("rate"), 0.0) or 0.0
+        return payload
+
+    @classmethod
+    def _serialize_economic_indicator(cls, row: EconomicIndicator) -> dict[str, Any]:
+        payload = EconomicIndicatorResponse.model_validate(row).model_dump(mode="json")
+        payload["value"] = cls._sanitize_float(payload.get("value"), 0.0) or 0.0
+        return payload
+
+    @classmethod
+    def _sanitize_market_rows(cls, rows: list[Any]) -> list[dict[str, Any]]:
+        sanitized_rows: list[dict[str, Any]] = []
+        for row in rows:
+            if isinstance(row, MarketData):
+                sanitized_rows.append(cls._serialize_market_row(row))
+            elif isinstance(row, dict):
+                sanitized_rows.append(cls._serialize_market_payload(row))
+        return sanitized_rows
+
+    @classmethod
+    def _sanitize_weather_payload(cls, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        if payload is None:
+            return None
+        sanitized = dict(payload)
+        sanitized["latitude"] = cls._sanitize_float(sanitized.get("latitude"), 0.0) or 0.0
+        sanitized["longitude"] = cls._sanitize_float(sanitized.get("longitude"), 0.0) or 0.0
+        sanitized["temperature_c"] = cls._sanitize_float(sanitized.get("temperature_c"), 0.0) or 0.0
+        sanitized["apparent_temperature_c"] = cls._sanitize_float(sanitized.get("apparent_temperature_c"))
+        sanitized["wind_speed_kph"] = cls._sanitize_float(sanitized.get("wind_speed_kph"))
+        return sanitized
+
+    @classmethod
+    def _sanitize_market_overview_payload(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(payload)
+        for key in ("stocks", "indices", "global_real_estate", "commodities", "real_estate_companies"):
+            sanitized[key] = cls._sanitize_market_rows(list(sanitized.get(key) or []))
+        sanitized["currencies"] = [
+            {
+                **dict(item),
+                "rate": cls._sanitize_float(dict(item).get("rate"), 0.0) or 0.0,
+            }
+            for item in list(sanitized.get("currencies") or [])
+            if isinstance(item, dict)
+        ]
+        sanitized["economic_indicators"] = [
+            {
+                **dict(item),
+                "value": cls._sanitize_float(dict(item).get("value"), 0.0) or 0.0,
+            }
+            for item in list(sanitized.get("economic_indicators") or [])
+            if isinstance(item, dict)
+        ]
+        sanitized["provider_utilization"] = [
+            {
+                **dict(item),
+                "type": str(dict(item).get("type") or "unknown"),
+                "circuit_state": str(dict(item).get("circuit_state") or "closed"),
+                "total_calls": cls._coerce_int(dict(item).get("total_calls")),
+                "successful_calls": cls._coerce_int(dict(item).get("successful_calls")),
+                "failed_calls": cls._coerce_int(dict(item).get("failed_calls")),
+            }
+            for item in list(sanitized.get("provider_utilization") or [])
+            if isinstance(item, dict)
+        ]
+        provider_mix = sanitized.get("provider_mix")
+        if isinstance(provider_mix, dict):
+            sanitized["provider_mix"] = {
+                **provider_mix,
+                "active_count": cls._coerce_int(provider_mix.get("active_count")),
+                "dormant_count": cls._coerce_int(provider_mix.get("dormant_count")),
+                "top_contributors": [str(item) for item in list(provider_mix.get("top_contributors") or []) if item],
+                "dormant_providers": [str(item) for item in list(provider_mix.get("dormant_providers") or []) if item],
+            }
+        sanitized["weather"] = cls._sanitize_weather_payload(sanitized.get("weather"))
+        return sanitized
+
+    @staticmethod
+    def _coerce_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value or default)
+        except Exception:
+            return default
 
     @classmethod
     def _sanitize_volume(cls, value: int | None) -> int:
@@ -30,9 +165,9 @@ class MarketService:
         if symbol:
             await cache.delete(cache.MARKET_SYMBOL.format(symbol=symbol.upper()))
 
-    @staticmethod
-    def _watchlist_to_market_snapshot(watchlist: WatchlistSymbol) -> dict:
-        return {
+    @classmethod
+    def _watchlist_to_market_snapshot(cls, watchlist: WatchlistSymbol) -> dict:
+        return cls._serialize_market_payload({
             "id": watchlist.id,
             "symbol": watchlist.symbol,
             "name": watchlist.name,
@@ -47,11 +182,11 @@ class MarketService:
             "data_timestamp": datetime.now(timezone.utc),
             "is_live_data": False,
             "data_source": "watchlist_fallback",
-        }
+        })
 
-    @staticmethod
-    def _market_row_to_snapshot(row: MarketData) -> dict:
-        payload = MarketDataResponse.model_validate(row).model_dump(mode="json")
+    @classmethod
+    def _market_row_to_snapshot(cls, row: MarketData) -> dict:
+        payload = cls._serialize_market_row(row)
         payload["is_live_data"] = False
         payload["data_source"] = "historical_snapshot"
         return payload
@@ -103,6 +238,533 @@ class MarketService:
 
         result = await db.execute(query.limit(limit))
         return [MarketService._watchlist_to_market_snapshot(item) for item in result.scalars().all()]
+
+    @staticmethod
+    def _canonical_symbol_specs() -> list[MarketSymbolSpec]:
+        return [
+            *UAE_CORE_SYMBOLS,
+            *GLOBAL_REALESTATE_SYMBOLS,
+            *INDEX_SYMBOLS,
+            *COMMODITY_SYMBOLS,
+        ]
+
+    @classmethod
+    async def ensure_canonical_watchlist(cls, db: AsyncSession) -> None:
+        specs = cls._canonical_symbol_specs()
+        symbols = [spec.symbol.upper() for spec in specs]
+        existing_result = await db.execute(
+            select(WatchlistSymbol).where(WatchlistSymbol.symbol.in_(symbols))
+        )
+        existing = {row.symbol.upper(): row for row in existing_result.scalars().all()}
+
+        changed = False
+        for spec in specs:
+            symbol = spec.symbol.upper()
+            row = existing.get(symbol)
+            if row is None:
+                db.add(
+                    WatchlistSymbol(
+                        symbol=symbol,
+                        name=spec.name,
+                        market_type=spec.market_type,
+                        exchange=spec.exchange,
+                        is_active=spec.is_active,
+                        priority=spec.priority,
+                        is_real_estate_company=spec.is_real_estate_company,
+                    )
+                )
+                changed = True
+                continue
+
+            updates = {
+                "name": spec.name,
+                "market_type": spec.market_type,
+                "exchange": spec.exchange,
+                "is_active": spec.is_active,
+                "priority": spec.priority,
+                "is_real_estate_company": spec.is_real_estate_company,
+            }
+            for field_name, value in updates.items():
+                if getattr(row, field_name) != value:
+                    setattr(row, field_name, value)
+                    changed = True
+
+        if changed:
+            await db.commit()
+            await cls._invalidate_market_cache()
+
+    @staticmethod
+    def _count_live_rows(rows: list[dict[str, Any]]) -> int:
+        return sum(1 for row in rows if row.get("is_live_data", True) is not False)
+
+    @staticmethod
+    def _latest_timestamp(rows: list[dict[str, Any]]) -> datetime | None:
+        timestamps: list[datetime] = []
+        for row in rows:
+            value = row.get("data_timestamp")
+            if isinstance(value, datetime):
+                timestamps.append(value if value.tzinfo else value.replace(tzinfo=timezone.utc))
+                continue
+            if isinstance(value, str):
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                timestamps.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc))
+        return max(timestamps) if timestamps else None
+
+    @classmethod
+    async def _run_market_refresh(cls) -> None:
+        from app.tasks.aggregation_tasks import _aggregate_full_market_data
+
+        await _aggregate_full_market_data()
+
+    @classmethod
+    async def ensure_market_surface_ready(cls, db: AsyncSession, *, force: bool = False) -> None:
+        await cls.ensure_canonical_watchlist(db)
+
+        now = datetime.now(timezone.utc)
+        core_rows = await cls.get_latest_market_data_for_symbols(
+            db,
+            [item.symbol for item in UAE_CORE_SYMBOLS],
+            limit=len(UAE_CORE_SYMBOLS),
+            include_watchlist_fallback=True,
+        )
+        global_rows = await cls.get_latest_market_data_for_symbols(
+            db,
+            [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS],
+            limit=8,
+            include_watchlist_fallback=True,
+        )
+        index_rows = await cls.get_latest_market_data(db, MarketType.INDEX, limit=4)
+        currencies = await cls.get_latest_currency_rates(db, limit=4)
+        indicators = await cls.get_latest_economic_indicators(db, limit=4)
+
+        latest_core_timestamp = cls._latest_timestamp(core_rows if isinstance(core_rows, list) else [])
+        core_is_stale = latest_core_timestamp is None or (now - latest_core_timestamp) > cls.SNAPSHOT_FRESHNESS_WINDOW
+        needs_refresh = force or core_is_stale or cls._count_live_rows(core_rows if isinstance(core_rows, list) else []) < 4 or len(global_rows) < 3 or len(index_rows) < 1 or len(currencies) < 2 or len(indicators) < 3
+
+        if not needs_refresh:
+            return
+
+        async with cls._market_refresh_lock:
+            cooldown_active = (
+                not force
+                and cls._last_market_refresh_attempt is not None
+                and (now - cls._last_market_refresh_attempt) < cls.MARKET_REFRESH_COOLDOWN
+            )
+            if cooldown_active:
+                return
+
+            cls._last_market_refresh_attempt = now
+            try:
+                await cls._run_market_refresh()
+            except Exception as exc:
+                logger.warning("Inline market refresh did not complete: {}", str(exc))
+
+    @classmethod
+    def _build_board_health(
+        cls,
+        *,
+        board: str,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        live_rows = cls._count_live_rows(rows)
+        fallback_rows = max(0, len(rows) - live_rows)
+        last_updated = cls._latest_timestamp(rows)
+        if len(rows) == 0:
+            status = "empty"
+        elif live_rows == len(rows):
+            status = "live"
+        elif live_rows > 0:
+            status = "mixed"
+        else:
+            status = "fallback"
+        providers = sorted({str(row.get("primary_provider")) for row in rows if row.get("primary_provider")})
+        return {
+            "board": board,
+            "status": status,
+            "total_rows": len(rows),
+            "live_rows": live_rows,
+            "fallback_rows": fallback_rows,
+            "last_updated": last_updated,
+            "providers": providers,
+        }
+
+    @staticmethod
+    async def _get_provider_utilization(db: AsyncSession, limit: int = 8) -> list[dict[str, Any]]:
+        result = await db.execute(
+            select(DataProvider)
+            .where(DataProvider.is_enabled.is_(True))
+            .order_by(desc(DataProvider.successful_calls), desc(DataProvider.total_calls), DataProvider.name.asc())
+            .limit(limit)
+        )
+        providers = result.scalars().all()
+        return [
+            {
+                "provider": provider.name,
+                "type": provider.type or "unknown",
+                "health": "healthy" if provider.is_healthy else "degraded",
+                "circuit_state": provider.circuit_state or "closed",
+                "total_calls": MarketService._coerce_int(provider.total_calls),
+                "successful_calls": MarketService._coerce_int(provider.successful_calls),
+                "failed_calls": MarketService._coerce_int(provider.failed_calls),
+                "last_success_at": provider.last_success_at,
+                "last_failure_at": provider.last_failure_at,
+            }
+            for provider in providers
+        ]
+
+    @staticmethod
+    async def _safe_collection(
+        label: str,
+        fetcher: Any,
+        default: Any,
+    ) -> Any:
+        try:
+            return await fetcher()
+        except Exception as exc:
+            logger.warning("Market overview partial failure in {}: {}", label, str(exc))
+            return default
+
+    @staticmethod
+    def _build_market_highlights(
+        *,
+        stocks: list[dict[str, Any]],
+        indices: list[dict[str, Any]],
+        currencies: list[dict[str, Any]],
+        indicators: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        highlights: list[dict[str, str]] = []
+
+        movers = [row for row in stocks if row.get("is_live_data", True)]
+        if movers:
+            top_mover = max(movers, key=lambda row: abs(float(row.get("change_percent") or 0.0)))
+            highlights.append(
+                {
+                    "title": "Top UAE mover",
+                    "value": f"{top_mover['symbol']} {float(top_mover.get('change_percent') or 0.0):+.2f}%",
+                    "context": f"{top_mover['name']} is leading the local board move right now.",
+                }
+            )
+
+        live_indices = [row for row in indices if row.get("is_live_data", True)]
+        if live_indices:
+            lead_index = max(live_indices, key=lambda row: abs(float(row.get("change_percent") or 0.0)))
+            highlights.append(
+                {
+                    "title": "Index pressure",
+                    "value": f"{lead_index['symbol']} {float(lead_index.get('change_percent') or 0.0):+.2f}%",
+                    "context": f"{lead_index['name']} is setting the benchmark tone for the board.",
+                }
+            )
+
+        if currencies:
+            primary_pair = currencies[0]
+            highlights.append(
+                {
+                    "title": "FX anchor",
+                    "value": f"{primary_pair['from_currency']}/{primary_pair['to_currency']} {float(primary_pair.get('rate') or 0.0):.4f}",
+                    "context": "Currency context is available for the active market read.",
+                }
+            )
+
+        if indicators:
+            primary_indicator = indicators[0]
+            highlights.append(
+                {
+                    "title": "Macro pulse",
+                    "value": primary_indicator["indicator_name"],
+                    "context": f"Latest macro context comes from {primary_indicator.get('source') or 'the active feed stack'}.",
+                }
+            )
+
+        return highlights[:4]
+
+    @staticmethod
+    def _build_market_brief(
+        *,
+        stocks: list[dict[str, Any]],
+        indices: list[dict[str, Any]],
+        currencies: list[dict[str, Any]],
+        indicators: list[dict[str, Any]],
+        board_health: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        live_uae_rows = [row for row in stocks if row.get("is_live_data", True)]
+        lead_symbol = max(
+            live_uae_rows,
+            key=lambda row: abs(float(row.get("change_percent") or 0.0)),
+        ) if live_uae_rows else None
+        live_indices = [row for row in indices if row.get("is_live_data", True)]
+        lead_index = max(
+            live_indices,
+            key=lambda row: abs(float(row.get("change_percent") or 0.0)),
+        ) if live_indices else None
+        primary_currency = currencies[0] if currencies else None
+        primary_indicator = indicators[0] if indicators else None
+        degraded_boards = [board for board in board_health if board.get("status") in {"fallback", "empty"}]
+
+        headline_parts = []
+        if lead_symbol:
+            headline_parts.append(
+                f"{lead_symbol['symbol']} is the lead local mover at {float(lead_symbol.get('change_percent') or 0.0):+.2f}%"
+            )
+        if lead_index:
+            headline_parts.append(f"{lead_index['symbol']} is setting the benchmark tone")
+        if not headline_parts:
+            headline_parts.append("DUBNEWSAI is holding a mixed but actionable market read")
+
+        focus_areas: list[str] = []
+        if primary_currency:
+            focus_areas.append(
+                f"FX anchor: {primary_currency['from_currency']}/{primary_currency['to_currency']} at {float(primary_currency.get('rate') or 0.0):.4f}"
+            )
+        if primary_indicator:
+            focus_areas.append(f"Macro pulse: {primary_indicator['indicator_name']}")
+        if degraded_boards:
+            focus_areas.append(
+                f"Coverage watch: {', '.join(board['board'] for board in degraded_boards[:2])}"
+            )
+        if not focus_areas:
+            focus_areas.append("Coverage is available across local boards, FX, and macro context.")
+
+        confidence = "high"
+        if degraded_boards:
+            confidence = "medium" if any(board.get("live_rows", 0) > 0 for board in degraded_boards) else "low"
+
+        narrative = " ".join(
+            part
+            for part in [
+                f"The current market read blends {len(stocks)} UAE rows, {len(indices)} indices, {len(currencies)} FX pairs, and {len(indicators)} macro signals.",
+                " ".join(focus_areas[:2]),
+                "Fallback rows remain visible where provider coverage is partial so the board never collapses into empty space."
+                if degraded_boards else "Live and fallback coverage are balanced so the board remains decision-ready even while some sources rotate.",
+            ]
+            if part
+        )
+
+        return {
+            "headline": ". ".join(headline_parts) + ".",
+            "narrative": narrative.strip(),
+            "focus_areas": focus_areas[:4],
+            "confidence": confidence,
+        }
+
+    @staticmethod
+    def _build_coverage_alerts(
+        board_health: list[dict[str, Any]],
+        boards: dict[str, list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        alerts: list[dict[str, Any]] = []
+        for board in board_health:
+            board_name = str(board.get("board") or "Board")
+            rows = boards.get(board_name, [])
+            affected_symbols = [str(row.get("symbol")) for row in rows if row.get("is_live_data", True) is False][:5]
+            status = str(board.get("status") or "unknown")
+            if status == "live":
+                continue
+            if status == "empty":
+                severity = "high"
+                message = f"{board_name} has no verified rows in the active snapshot."
+                action = "Force a refresh cycle and widen the provider rotation for this board."
+            elif status == "fallback":
+                severity = "medium"
+                message = f"{board_name} is currently leaning on verified reference rows instead of fresh live quotes."
+                action = "Keep the board visible, but prioritize alternate providers for the missing symbols."
+            else:
+                severity = "low"
+                message = f"{board_name} is live, but part of the board is still being backfilled from the fallback layer."
+                action = "Monitor the affected symbols and preserve current live rows while the next sync completes."
+            alerts.append(
+                {
+                    "board": board_name,
+                    "severity": severity,
+                    "message": message,
+                    "action": action,
+                    "affected_symbols": affected_symbols,
+                }
+            )
+        return alerts[:6]
+
+    @staticmethod
+    def _build_provider_mix(provider_utilization: list[dict[str, Any]]) -> dict[str, Any]:
+        active = [
+            item["provider"]
+            for item in provider_utilization
+            if int(item.get("successful_calls") or 0) > 0 or int(item.get("total_calls") or 0) > 0
+        ]
+        dormant = [
+            item["provider"]
+            for item in provider_utilization
+            if int(item.get("successful_calls") or 0) == 0 and int(item.get("total_calls") or 0) == 0
+        ]
+        ranked = sorted(
+            provider_utilization,
+            key=lambda item: (int(item.get("successful_calls") or 0), int(item.get("total_calls") or 0)),
+            reverse=True,
+        )
+        return {
+            "active_count": len(active),
+            "dormant_count": len(dormant),
+            "top_contributors": [item["provider"] for item in ranked[:5] if item.get("provider")],
+            "dormant_providers": dormant[:6],
+        }
+
+    @classmethod
+    async def get_priority_market_board(cls, db: AsyncSession, limit: int = 24) -> list[dict[str, Any]]:
+        await cls.ensure_market_surface_ready(db)
+        board_specs = [*UAE_CORE_SYMBOLS, *GLOBAL_REALESTATE_SYMBOLS]
+        board_rows = await cls.get_latest_market_data_for_symbols(
+            db,
+            [item.symbol for item in board_specs],
+            limit=len(board_specs),
+            include_watchlist_fallback=True,
+        )
+        ordered_symbols = {spec.symbol.upper(): index for index, spec in enumerate(board_specs)}
+        rows = list(board_rows)
+        rows.sort(key=lambda row: ordered_symbols.get(str(row.get("symbol", "")).upper(), len(ordered_symbols)))
+        return rows[:limit]
+
+    @classmethod
+    async def get_market_overview_payload(cls, db: AsyncSession) -> dict[str, Any]:
+        cached_overview = await cache.get(cache.MARKET_OVERVIEW)
+        if cached_overview is not None:
+            try:
+                return cls._sanitize_market_overview_payload(dict(cached_overview))
+            except Exception:
+                await cache.delete(cache.MARKET_OVERVIEW)
+
+        try:
+            await cls.ensure_market_surface_ready(db)
+        except Exception as exc:
+            logger.warning("Market surface refresh preparation failed: {}", str(exc))
+
+        stocks = await cls._safe_collection(
+            "uae_board",
+            lambda: cls.get_latest_market_data_for_symbols(
+                db,
+                [item.symbol for item in UAE_CORE_SYMBOLS],
+                limit=20,
+                include_watchlist_fallback=True,
+            ),
+            [],
+        )
+        indices = await cls._safe_collection(
+            "indices",
+            lambda: cls.get_latest_market_data(db, MarketType.INDEX, limit=10),
+            [],
+        )
+        global_real_estate = await cls._safe_collection(
+            "global_real_estate",
+            lambda: cls.get_latest_market_data_for_symbols(
+                db,
+                [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS],
+                limit=16,
+                include_watchlist_fallback=True,
+            ),
+            [],
+        )
+        commodities = await cls._safe_collection(
+            "commodities",
+            lambda: cls.get_latest_market_data_for_symbols(
+                db,
+                [item.symbol for item in COMMODITY_SYMBOLS],
+                limit=6,
+                include_watchlist_fallback=True,
+            ),
+            [],
+        )
+        real_estate = await cls._safe_collection("real_estate_companies", lambda: cls.get_real_estate_companies(db), [])
+        currencies = await cls._safe_collection(
+            "currencies",
+            lambda: cls.get_latest_currency_rates(db, limit=10),
+            [],
+        )
+        economic_indicator_rows = await cls._safe_collection(
+            "economic_indicators",
+            lambda: cls.get_latest_economic_indicators(db, limit=12),
+            [],
+        )
+        weather = await cls._safe_collection("weather", cls.get_market_weather, None)
+        provider_utilization = await cls._safe_collection(
+            "provider_utilization",
+            lambda: cls._get_provider_utilization(db),
+            [],
+        )
+
+        stocks_rows = list(stocks)
+        index_rows = list(indices)
+        global_rows = list(global_real_estate)
+        commodity_rows = list(commodities)
+        real_estate_rows = list(real_estate)
+        currencies = [cls._serialize_currency_rate(item) if isinstance(item, CurrencyRate) else dict(item) for item in currencies]
+        economic_indicators = [
+            cls._serialize_economic_indicator(item) if isinstance(item, EconomicIndicator) else dict(item)
+            for item in economic_indicator_rows
+        ]
+
+        total_symbols = len(stocks_rows) + len(global_rows) + len(index_rows) + len(commodity_rows)
+        live_symbols = (
+            cls._count_live_rows(stocks_rows)
+            + cls._count_live_rows(global_rows)
+            + cls._count_live_rows(index_rows)
+            + cls._count_live_rows(commodity_rows)
+        )
+        board_health = [
+            cls._build_board_health(board="UAE market board", rows=stocks_rows),
+            cls._build_board_health(board="Global real-estate board", rows=global_rows),
+            cls._build_board_health(board="Indices", rows=index_rows),
+            cls._build_board_health(board="Commodities", rows=commodity_rows),
+        ]
+        provider_mix = cls._build_provider_mix(provider_utilization)
+
+        payload = {
+            "stocks": stocks_rows,
+            "indices": index_rows,
+            "global_real_estate": global_rows,
+            "commodities": commodity_rows,
+            "currencies": currencies,
+            "economic_indicators": economic_indicators,
+            "real_estate_companies": real_estate_rows,
+            "weather": weather,
+            "market_status": market_aggregator._get_market_status(),
+            "board_health": board_health,
+            "coverage_snapshot": {
+                "tracked_symbols": total_symbols,
+                "live_symbols": live_symbols,
+                "fallback_symbols": max(0, total_symbols - live_symbols),
+                "fx_pairs": len(currencies),
+                "macro_indicators": len(economic_indicators),
+                "provider_count": len(provider_utilization),
+            },
+            "provider_utilization": provider_utilization,
+            "provider_mix": provider_mix,
+            "intelligence_highlights": cls._build_market_highlights(
+                stocks=stocks_rows,
+                indices=index_rows,
+                currencies=currencies,
+                indicators=economic_indicators,
+            ),
+            "market_brief": cls._build_market_brief(
+                stocks=stocks_rows,
+                indices=index_rows,
+                currencies=currencies,
+                indicators=economic_indicators,
+                board_health=board_health,
+            ),
+            "coverage_alerts": cls._build_coverage_alerts(
+                board_health,
+                {
+                    "UAE market board": stocks_rows,
+                    "Global real-estate board": global_rows,
+                    "Indices": index_rows,
+                    "Commodities": commodity_rows,
+                },
+            ),
+        }
+        payload = cls._sanitize_market_overview_payload(payload)
+        await cache.set(cache.MARKET_OVERVIEW, payload, ttl=60)
+        return payload
 
     @staticmethod
     async def update_stock_quote(
@@ -206,6 +868,15 @@ class MarketService:
         asset_class: str | None = None,
         region: str | None = None,
     ) -> MarketData:
+        price = MarketService._sanitize_float(price, 0.0) or 0.0
+        open_price = MarketService._sanitize_float(open_price)
+        high_price = MarketService._sanitize_float(high_price)
+        low_price = MarketService._sanitize_float(low_price)
+        previous_close = MarketService._sanitize_float(previous_close)
+        market_cap = MarketService._sanitize_float(market_cap)
+        change = MarketService._sanitize_float(change, 0.0) or 0.0
+        change_percent = MarketService._sanitize_float(change_percent, 0.0) or 0.0
+        data_quality_score = MarketService._sanitize_float(data_quality_score)
         market_data = MarketData(
             symbol=symbol.upper(),
             name=name,
@@ -245,6 +916,7 @@ class MarketService:
         rate: float,
         timestamp: datetime,
     ) -> CurrencyRate:
+        rate = MarketService._sanitize_float(rate, 0.0) or 0.0
         currency_rate = CurrencyRate(
             from_currency=from_currency,
             to_currency=to_currency,
@@ -271,6 +943,7 @@ class MarketService:
         description: str | None,
         country: str = "UAE",
     ) -> EconomicIndicator:
+        value = MarketService._sanitize_float(value, 0.0) or 0.0
         indicator = EconomicIndicator(
             indicator_name=indicator_name,
             indicator_code=indicator_code,
@@ -298,7 +971,7 @@ class MarketService:
         cache_key = f"market_latest:{cache_suffix}:{limit}"
         cached_market = await cache.get(cache_key)
         if cached_market is not None:
-            return cached_market
+            return MarketService._sanitize_market_rows(list(cached_market))
 
         subquery = (
             select(
@@ -324,7 +997,7 @@ class MarketService:
         query = query.order_by(desc(MarketData.data_timestamp)).limit(limit)
         result = await db.execute(query)
         rows = list(result.scalars().all())
-        serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
+        serialized = [MarketService._serialize_market_row(row) for row in rows]
         if len(serialized) < limit:
             fallback_rows = await MarketService._get_watchlist_fallback(db, market_type=market_type, limit=limit)
             known_snapshots = await MarketService._get_latest_known_snapshots(
@@ -346,7 +1019,7 @@ class MarketService:
     async def get_real_estate_companies(db: AsyncSession) -> list[MarketData] | list[dict]:
         cached_companies = await cache.get_cached_market_real_estate()
         if cached_companies is not None:
-            return [MarketDataResponse.model_validate(company) for company in cached_companies]
+            return MarketService._sanitize_market_rows(list(cached_companies))
 
         watchlist_result = await db.execute(
             select(WatchlistSymbol).where(
@@ -377,7 +1050,7 @@ class MarketService:
         ).order_by(MarketData.symbol.asc())
         result = await db.execute(query)
         companies = list(result.scalars().all())
-        serialized = [MarketDataResponse.model_validate(company).model_dump(mode="json") for company in companies]
+        serialized = [MarketService._serialize_market_row(company) for company in companies]
         if len(serialized) < len(symbols):
             known_snapshots = await MarketService._get_latest_known_snapshots(db, symbols)
             fallback_companies = await MarketService._get_watchlist_fallback(
@@ -393,7 +1066,7 @@ class MarketService:
                 serialized.append(known_snapshots.get(fallback["symbol"], fallback))
                 existing_symbols.add(fallback["symbol"])
         await cache.cache_market_real_estate(serialized, ttl=120)
-        return [MarketDataResponse.model_validate(company) for company in serialized]
+        return serialized
 
     @staticmethod
     async def get_latest_market_data_for_symbols(
@@ -410,7 +1083,7 @@ class MarketService:
         cache_key = f"market_latest:symbols:{','.join(normalized_symbols)}:{limit or len(normalized_symbols)}:{int(include_watchlist_fallback)}"
         cached_market = await cache.get(cache_key)
         if cached_market is not None:
-            return cached_market
+            return MarketService._sanitize_market_rows(list(cached_market))
 
         subquery = (
             select(
@@ -434,7 +1107,7 @@ class MarketService:
         order_index = {symbol: index for index, symbol in enumerate(normalized_symbols)}
         rows.sort(key=lambda row: (order_index.get(row.symbol, len(order_index)), -row.data_timestamp.timestamp()))
 
-        serialized = [MarketDataResponse.model_validate(row).model_dump(mode="json") for row in rows]
+        serialized = [MarketService._serialize_market_row(row) for row in rows]
         if include_watchlist_fallback:
             known_snapshots = await MarketService._get_latest_known_snapshots(db, normalized_symbols)
             watchlist_result = await db.execute(
@@ -522,7 +1195,7 @@ class MarketService:
     async def get_latest_symbol_data(db: AsyncSession, symbol: str) -> MarketData | dict | None:
         cached_symbol = await cache.get_cached_market_symbol(symbol)
         if cached_symbol is not None:
-            return cached_symbol
+            return MarketService._serialize_market_payload(dict(cached_symbol))
 
         result = await db.execute(
             select(MarketData)
@@ -532,12 +1205,13 @@ class MarketService:
         )
         latest = result.scalar_one_or_none()
         if latest is not None:
+            payload = MarketService._serialize_market_row(latest)
             await cache.cache_market_symbol(
                 symbol,
-                MarketDataResponse.model_validate(latest).model_dump(mode="json"),
+                payload,
                 ttl=60,
             )
-            return latest
+            return payload
 
         watchlist_result = await db.execute(
             select(WatchlistSymbol)
@@ -557,7 +1231,7 @@ class MarketService:
     async def get_market_weather() -> dict | None:
         cached_weather = await cache.get(cache.MARKET_WEATHER)
         if cached_weather is not None:
-            return cached_weather
+            return MarketService._sanitize_weather_payload(dict(cached_weather))
 
         aggregator = FreeDataAggregator()
         try:
@@ -584,5 +1258,6 @@ class MarketService:
             "observed_at": snapshot.observed_at,
             "source": snapshot.source,
         }
+        payload = MarketService._sanitize_weather_payload(payload)
         await cache.set(cache.MARKET_WEATHER, payload, ttl=900)
         return payload

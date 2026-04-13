@@ -33,6 +33,16 @@ class NewsAggregationResult:
 
 class NewsAggregator:
     DEFAULT_QUERY = "Dubai real estate"
+    QUERY_THEMES: tuple[str, ...] = (
+        "Dubai property market",
+        "UAE real estate investment",
+        "Dubai rents and yields",
+        "Emaar OR Aldar OR Damac OR Deyaar",
+        "Abu Dhabi property market",
+        "Dubai off-plan launches",
+        "Dubai mortgage rates",
+        "Dubai property regulation OR RERA OR DLD",
+    )
     PROVIDER_POLL_MINUTES: dict[str, int] = {
         "rss_feeds": 2,
         "web_scrapers": 5,
@@ -45,6 +55,19 @@ class NewsAggregator:
         "mediastack": 30,
         "contextual_web": 30,
         "bing_news": 180,
+    }
+    PROVIDER_QUERY_BUDGET: dict[str, int] = {
+        "newsapi": 3,
+        "gnews": 2,
+        "currents": 2,
+        "thenewsapi": 2,
+        "newsdata": 2,
+        "newsapi_ai": 2,
+        "mediastack": 1,
+        "contextual_web": 1,
+        "bing_news": 1,
+        "rss_feeds": 1,
+        "web_scrapers": 1,
     }
 
     def __init__(self) -> None:
@@ -73,22 +96,25 @@ class NewsAggregator:
             ]
 
             scheduled_providers: list[ProviderConfig] = []
+            scheduled_queries: list[list[str]] = []
             tasks: list[object] = []
             for provider in providers:
                 if not self._should_poll_provider(provider.name, now):
                     provider_stats[provider.name] = self._provider_skipped_stats(provider.name)
                     continue
+                queries = self._queries_for_provider(provider.name, effective_query, now)
                 scheduled_providers.append(provider)
-                tasks.append(self._fetch_from_provider(aggregator, provider, effective_query))
+                scheduled_queries.append(queries)
+                tasks.append(self._fetch_from_provider(aggregator, provider, queries))
 
             results = await self._gather(tasks)
 
-            for provider, result in zip(scheduled_providers, results):
+            for provider, queries, result in zip(scheduled_providers, scheduled_queries, results):
                 if isinstance(result, Exception):
-                    provider_stats[provider.name] = self._provider_error_stats(provider.name, result)
+                    provider_stats[provider.name] = self._provider_error_stats(provider.name, result, queries=queries)
                     continue
                 raw_records.extend(result)
-                provider_stats[provider.name] = self._provider_success_stats(provider.name, len(result))
+                provider_stats[provider.name] = self._provider_success_stats(provider.name, len(result), queries=queries)
 
             deduped = self._deduplicate_articles(raw_records)
             ranked = sorted(
@@ -125,34 +151,52 @@ class NewsAggregator:
         self,
         aggregator: FreeDataAggregator,
         provider: ProviderConfig,
-        query: str,
+        queries: list[str],
     ) -> list[NormalizedNewsRecord]:
-        fetchers = {
-            "newsapi": lambda: aggregator._fetch_newsapi(query=query),
-            "gnews": lambda: aggregator._fetch_gnews(query=query),
-            "currents": lambda: aggregator._fetch_currents(query=query),
-            "newsdata": lambda: aggregator._fetch_newsdata(query=query),
-            "thenewsapi": lambda: aggregator._fetch_thenewsapi(query=query),
-            "mediastack": lambda: aggregator._fetch_mediastack(query=query),
-            "newsapi_ai": lambda: aggregator._fetch_newsapi_ai(query=query),
-            "bing_news": lambda: aggregator._fetch_bing_news(query=query),
-            "contextual_web": lambda: aggregator._fetch_contextual_web(query=query),
+        fetcher = {
             "rss_feeds": aggregator._fetch_rss,
             "web_scrapers": aggregator._fetch_scraped_news,
-        }
-
-        fetcher = fetchers.get(provider.name)
+        }.get(provider.name)
         if fetcher is None:
-            return []
+            fetcher = lambda: []
 
-        try:
-            return await provider_health.call_provider(provider.name, fetcher)
-        except CircuitBreakerOpenError:
-            logger.warning("News provider {} skipped because its circuit breaker is open", provider.name)
-            raise
+        if provider.name in {"rss_feeds", "web_scrapers"}:
+            try:
+                return await provider_health.call_provider(provider.name, fetcher)
+            except CircuitBreakerOpenError:
+                logger.warning("News provider {} skipped because its circuit breaker is open", provider.name)
+                raise
+
+        records: list[NormalizedNewsRecord] = []
+        seen_urls: set[str] = set()
+        for query in queries:
+            fetcher = {
+                "newsapi": lambda query=query: aggregator._fetch_newsapi(query=query),
+                "gnews": lambda query=query: aggregator._fetch_gnews(query=query),
+                "currents": lambda query=query: aggregator._fetch_currents(query=query),
+                "newsdata": lambda query=query: aggregator._fetch_newsdata(query=query),
+                "thenewsapi": lambda query=query: aggregator._fetch_thenewsapi(query=query),
+                "mediastack": lambda query=query: aggregator._fetch_mediastack(query=query),
+                "newsapi_ai": lambda query=query: aggregator._fetch_newsapi_ai(query=query),
+                "bing_news": lambda query=query: aggregator._fetch_bing_news(query=query),
+                "contextual_web": lambda query=query: aggregator._fetch_contextual_web(query=query),
+            }.get(provider.name)
+            if fetcher is None:
+                continue
+            try:
+                fetched_records = await provider_health.call_provider(provider.name, fetcher)
+            except CircuitBreakerOpenError:
+                logger.warning("News provider {} skipped because its circuit breaker is open", provider.name)
+                raise
+            for record in fetched_records:
+                if record.url in seen_urls:
+                    continue
+                seen_urls.add(record.url)
+                records.append(record)
+        return records
 
     @staticmethod
-    def _provider_success_stats(provider_name: str, count: int) -> dict[str, object]:
+    def _provider_success_stats(provider_name: str, count: int, *, queries: list[str] | None = None) -> dict[str, object]:
         state = provider_health.snapshot(provider_name)
         return {
             "status": "success",
@@ -160,10 +204,11 @@ class NewsAggregator:
             "state": state.state,
             "reliability": state.reliability,
             "last_error": state.last_error,
+            "queries": queries or [],
         }
 
     @staticmethod
-    def _provider_error_stats(provider_name: str, error: Exception) -> dict[str, object]:
+    def _provider_error_stats(provider_name: str, error: Exception, *, queries: list[str] | None = None) -> dict[str, object]:
         state = provider_health.snapshot(provider_name)
         return {
             "status": "failed",
@@ -171,6 +216,7 @@ class NewsAggregator:
             "state": state.state,
             "reliability": state.reliability,
             "last_error": str(error),
+            "queries": queries or [],
         }
 
     @staticmethod
@@ -183,6 +229,25 @@ class NewsAggregator:
             "reliability": state.reliability,
             "last_error": None,
         }
+
+    def _queries_for_provider(self, provider_name: str, query: str, now: datetime) -> list[str]:
+        if provider_name in {"rss_feeds", "web_scrapers"}:
+            return [query]
+
+        budget = max(1, self.PROVIDER_QUERY_BUDGET.get(provider_name, 1))
+        rotated_themes = list(self.QUERY_THEMES)
+        if rotated_themes:
+            offset = (now.hour + sum(ord(char) for char in provider_name)) % len(rotated_themes)
+            rotated_themes = rotated_themes[offset:] + rotated_themes[:offset]
+
+        queries = [query]
+        for theme in rotated_themes:
+            if len(queries) >= budget:
+                break
+            if theme.lower() == query.lower():
+                continue
+            queries.append(theme)
+        return list(dict.fromkeys(item.strip() for item in queries if item.strip()))
 
     @staticmethod
     def _normalize_title(title: str) -> str:

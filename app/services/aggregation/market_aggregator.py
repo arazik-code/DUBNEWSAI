@@ -227,6 +227,7 @@ class MarketAggregator:
             "alpha_vantage": "alpha_vantage",
             "yahoo_chart": "yahoo_finance",
             "yfinance": "yahoo_finance",
+            "exchangerate_api": "exchange_rate_api",
         }
         return aliases.get(normalized, normalized)
 
@@ -236,10 +237,16 @@ class MarketAggregator:
         for quote in results.get("quotes", []):
             provider_key = MarketAggregator._normalize_provider_name(quote.provider)
             provider_counts[provider_key] = provider_counts.get(provider_key, 0) + 1
+            for supporting_provider in getattr(quote, "supporting_providers", []):
+                supporting_key = MarketAggregator._normalize_provider_name(supporting_provider)
+                provider_counts[supporting_key] = provider_counts.get(supporting_key, 0) + 1
 
         for rate in results.get("currencies", []):
             provider_key = MarketAggregator._normalize_provider_name(rate.source)
             provider_counts[provider_key] = provider_counts.get(provider_key, 0) + 1
+            for supporting_source in getattr(rate, "supporting_sources", []):
+                supporting_key = MarketAggregator._normalize_provider_name(supporting_source)
+                provider_counts[supporting_key] = provider_counts.get(supporting_key, 0) + 1
 
         for indicator in results.get("economic_indicators", []):
             provider_key = MarketAggregator._normalize_provider_name(indicator.source)

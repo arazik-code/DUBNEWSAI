@@ -183,7 +183,7 @@ function IndicatorList({ indicators }: { indicators: EconomicIndicator[] }) {
 }
 
 export function MarketOverview({ compact = false }: { compact?: boolean }) {
-  const { data, isLoading } = useMarketOverview()
+  const { data, isLoading, isError } = useMarketOverview()
   const hasFallbackOnly = Boolean(data?.stocks.length) && Boolean(data?.stocks.every((stock) => stock.is_live_data === false))
   const stocks = compact ? (data?.stocks || []).slice(0, 6) : (data?.stocks || [])
   const globalRealEstate = compact ? (data?.global_real_estate || []).slice(0, 4) : (data?.global_real_estate || [])
@@ -191,9 +191,24 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
   const currencies = compact ? (data?.currencies || []).slice(0, 4) : (data?.currencies || [])
   const indicators = compact ? (data?.economic_indicators || []).slice(0, 4) : (data?.economic_indicators || [])
   const commodities = compact ? [] : (data?.commodities || [])
+  const boardHealth = data?.board_health || []
+  const providerUtilization = data?.provider_utilization || []
+  const providerMix = data?.provider_mix
+  const marketBrief = data?.market_brief
+  const coverageAlerts = data?.coverage_alerts || []
+  const highlights = data?.intelligence_highlights || []
+  const coverageSnapshot = data?.coverage_snapshot
 
   if (isLoading) {
     return <div className="panel-premium h-96 animate-pulse bg-white/[0.03]" />
+  }
+
+  if (isError || !data) {
+    return (
+      <section className="panel-premium rounded-[2rem] p-6 text-sm text-white/62">
+        The market surface is reconnecting to the intelligence stack. DUBNEWSAI is keeping the board safe instead of showing misleading zero coverage.
+      </section>
+    )
   }
 
   if (compact) {
@@ -327,6 +342,35 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
             <SummaryTile title="FX coverage" value={`${data?.currencies.length || 0}`} caption="AED and major cross pairs" />
             <SummaryTile title="Macro set" value={`${data?.economic_indicators.length || 0}`} caption="Economic indicators feeding context" />
           </div>
+
+          {highlights.length ? (
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {highlights.map((highlight) => (
+                <div key={highlight.title} className="rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-white/40">{highlight.title}</div>
+                  <div className="mt-3 text-lg font-semibold text-white">{highlight.value}</div>
+                  <p className="mt-2 text-sm leading-6 text-white/50">{highlight.context}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {marketBrief ? (
+            <div className="mt-6 rounded-[1.8rem] border border-white/10 bg-white/[0.03] p-5">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-white/40">Market brief</div>
+              <div className="mt-3 text-lg font-semibold text-white">{marketBrief.headline}</div>
+              <p className="mt-3 max-w-4xl text-sm leading-7 text-white/54">{marketBrief.narrative}</p>
+              {marketBrief.focus_areas.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {marketBrief.focus_areas.map((item) => (
+                    <span key={item} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/68">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -402,9 +446,120 @@ export function MarketOverview({ compact = false }: { compact?: boolean }) {
 
           <StackPanel title="Coverage snapshot">
             <div className="grid gap-3 sm:grid-cols-2">
-              <SummaryTile title="Stored equities" value={`${stocks.length + globalRealEstate.length}`} caption="Tracked across UAE and global boards" />
-              <SummaryTile title="Macro + FX" value={`${indicators.length + currencies.length}`} caption="Context modules active" />
+              <SummaryTile
+                title="Stored equities"
+                value={`${coverageSnapshot?.tracked_symbols ?? stocks.length + globalRealEstate.length}`}
+                caption={`${coverageSnapshot?.live_symbols ?? 0} live rows, ${coverageSnapshot?.fallback_symbols ?? 0} fallback rows`}
+              />
+              <SummaryTile
+                title="Macro + FX"
+                value={`${(coverageSnapshot?.macro_indicators ?? indicators.length) + (coverageSnapshot?.fx_pairs ?? currencies.length)}`}
+                caption={`${coverageSnapshot?.provider_count ?? providerUtilization.length} active providers behind the board`}
+              />
             </div>
+          </StackPanel>
+
+          <StackPanel title="Coverage alerts">
+            {coverageAlerts.length ? (
+              coverageAlerts.map((alert) => (
+                <div key={`${alert.board}-${alert.message}`} className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{alert.board}</div>
+                      <p className="mt-2 text-sm leading-6 text-white/54">{alert.message}</p>
+                      <p className="mt-2 text-xs text-white/40">{alert.action}</p>
+                    </div>
+                    <div className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/68">
+                      {titleCase(alert.severity)}
+                    </div>
+                  </div>
+                  {alert.affected_symbols.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/52">
+                      {alert.affected_symbols.map((symbol) => (
+                        <span key={`${alert.board}-${symbol}`} className="rounded-full border border-white/10 px-2.5 py-1">
+                          {symbol}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/56">
+                No active coverage alerts. The board is holding a stable cross-source read.
+              </div>
+            )}
+          </StackPanel>
+
+          <StackPanel title="Board health">
+            {boardHealth.length ? (
+              boardHealth.map((board) => (
+                <div key={board.board} className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{board.board}</div>
+                      <div className="mt-1 text-xs text-white/42">
+                        {board.live_rows} live / {board.fallback_rows} fallback
+                        {board.last_updated ? ` | updated ${new Date(board.last_updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </div>
+                    </div>
+                    <div className="rounded-full border border-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/68">
+                      {titleCase(board.status)}
+                    </div>
+                  </div>
+                  {board.providers.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/52">
+                      {board.providers.map((provider) => (
+                        <span key={`${board.board}-${provider}`} className="rounded-full border border-white/10 px-2.5 py-1">
+                          {titleCase(provider)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/56">
+                Board health will appear as soon as the active coverage set refreshes.
+              </div>
+            )}
+          </StackPanel>
+
+          <StackPanel title="Provider utilization">
+            {providerMix ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SummaryTile
+                  title="Active providers"
+                  value={`${providerMix.active_count}`}
+                  caption={`${providerMix.top_contributors.length} top contributors shaping the board`}
+                />
+                <SummaryTile
+                  title="Dormant providers"
+                  value={`${providerMix.dormant_count}`}
+                  caption={providerMix.dormant_providers.length ? providerMix.dormant_providers.slice(0, 3).map((item) => titleCase(item)).join(" · ") : "No dormant providers in the current mix"}
+                />
+              </div>
+            ) : null}
+            {providerUtilization.length ? (
+              providerUtilization.slice(0, 6).map((provider) => (
+                <div key={provider.provider} className="flex items-start justify-between gap-3 rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{titleCase(provider.provider)}</div>
+                    <div className="mt-1 text-xs text-white/42">
+                      {titleCase(provider.type)} | {provider.successful_calls} successful calls
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-white/52">
+                    <div>{titleCase(provider.health)}</div>
+                    <div className="mt-1 uppercase tracking-[0.18em] text-white/36">{provider.circuit_state}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/56">
+                Provider utilization becomes visible once the market orchestration cycle records live calls.
+              </div>
+            )}
           </StackPanel>
         </div>
       </div>

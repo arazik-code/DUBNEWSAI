@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
+from app.integrations.free_data_sources import FreeDataAggregator, NormalizedCurrencyRate
 from app.database import AsyncSessionLocal
 from app.models.market_data import CurrencyRate, MarketData, MarketType, StockExchange, WatchlistSymbol
 from app.services.market_service import MarketService
@@ -81,17 +82,30 @@ class FakeAlphaVantageClient:
         }
 
 
-def test_market_overview_and_symbol_endpoints(client):
+def test_market_overview_and_symbol_endpoints(client, monkeypatch):
     asyncio.run(seed_market_records())
+
+    async def fake_ensure_market_surface_ready(cls, db, force: bool = False):
+        return None
+
+    async def fake_market_weather():
+        return None
+
+    monkeypatch.setattr(MarketService, "ensure_market_surface_ready", classmethod(fake_ensure_market_surface_ready))
+    monkeypatch.setattr(MarketService, "get_market_weather", staticmethod(fake_market_weather))
 
     overview_response = client.get("/api/v1/market/overview")
     assert overview_response.status_code == 200
     overview_payload = overview_response.json()
-    assert len(overview_payload["stocks"]) == 1
+    assert any(item["symbol"] == "EMAAR" for item in overview_payload["stocks"])
     assert len(overview_payload["indices"]) == 1
     assert len(overview_payload["currencies"]) == 1
     assert len(overview_payload["real_estate_companies"]) == 1
     assert overview_payload["real_estate_companies"][0]["symbol"] == "EMAAR"
+    assert "market_brief" in overview_payload
+    assert "coverage_alerts" in overview_payload
+    assert "provider_mix" in overview_payload
+    assert overview_payload["coverage_snapshot"]["tracked_symbols"] >= 1
 
     symbol_response = client.get("/api/v1/market/symbol/EMAAR")
     assert symbol_response.status_code == 200
@@ -128,3 +142,73 @@ def test_market_service_updates_quote_and_currency_rate():
             assert rate.rate == 3.6725
 
     asyncio.run(run_assertions())
+
+
+def test_market_overview_sanitizes_nullable_provider_metrics():
+    payload = MarketService._sanitize_market_overview_payload(
+        {
+            "stocks": [],
+            "indices": [],
+            "global_real_estate": [],
+            "commodities": [],
+            "currencies": [],
+            "economic_indicators": [],
+            "real_estate_companies": [],
+            "provider_utilization": [
+                {
+                    "provider": "newsapi",
+                    "type": None,
+                    "health": "healthy",
+                    "circuit_state": None,
+                    "total_calls": None,
+                    "successful_calls": None,
+                    "failed_calls": None,
+                }
+            ],
+            "provider_mix": {
+                "active_count": None,
+                "dormant_count": None,
+                "top_contributors": ["newsapi"],
+                "dormant_providers": [None, "gnews"],
+            },
+        }
+    )
+
+    provider = payload["provider_utilization"][0]
+    assert provider["type"] == "unknown"
+    assert provider["circuit_state"] == "closed"
+    assert provider["total_calls"] == 0
+    assert payload["provider_mix"]["active_count"] == 0
+    assert payload["provider_mix"]["dormant_providers"] == ["gnews"]
+
+
+def test_currency_rate_merge_uses_consensus_and_supporting_sources():
+    merged = FreeDataAggregator._merge_currency_rates_for_pair(
+        [
+            NormalizedCurrencyRate(
+                from_currency="AED",
+                to_currency="USD",
+                rate=0.2722,
+                timestamp=datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc),
+                source="frankfurter",
+            ),
+            NormalizedCurrencyRate(
+                from_currency="AED",
+                to_currency="USD",
+                rate=0.2723,
+                timestamp=datetime(2026, 4, 13, 12, 5, tzinfo=timezone.utc),
+                source="exchange_rate_api",
+            ),
+            NormalizedCurrencyRate(
+                from_currency="AED",
+                to_currency="USD",
+                rate=0.2721,
+                timestamp=datetime(2026, 4, 13, 12, 10, tzinfo=timezone.utc),
+                source="currencyapi",
+            ),
+        ]
+    )
+
+    assert round(merged.rate, 4) == 0.2722
+    assert merged.source == "frankfurter"
+    assert merged.supporting_sources == ["exchange_rate_api", "currencyapi"]

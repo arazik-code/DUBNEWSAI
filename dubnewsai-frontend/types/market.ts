@@ -66,6 +66,58 @@ export interface MarketOverviewResponse {
   real_estate_companies: MarketStock[]
   weather?: WeatherSnapshot | null
   market_status?: Record<string, string> | null
+  board_health?: {
+    board: string
+    status: string
+    total_rows: number
+    live_rows: number
+    fallback_rows: number
+    last_updated?: string | null
+    providers: string[]
+  }[]
+  coverage_snapshot?: {
+    tracked_symbols: number
+    live_symbols: number
+    fallback_symbols: number
+    fx_pairs: number
+    macro_indicators: number
+    provider_count: number
+  } | null
+  provider_utilization?: {
+    provider: string
+    type: string
+    health: string
+    circuit_state: string
+    total_calls: number
+    successful_calls: number
+    failed_calls: number
+    last_success_at?: string | null
+    last_failure_at?: string | null
+  }[]
+  provider_mix?: {
+    active_count: number
+    dormant_count: number
+    top_contributors: string[]
+    dormant_providers: string[]
+  } | null
+  intelligence_highlights?: {
+    title: string
+    value: string
+    context: string
+  }[]
+  market_brief?: {
+    headline: string
+    narrative: string
+    focus_areas: string[]
+    confidence: string
+  } | null
+  coverage_alerts?: {
+    board: string
+    severity: string
+    message: string
+    action: string
+    affected_symbols: string[]
+  }[]
 }
 
 export interface MarketHealth {

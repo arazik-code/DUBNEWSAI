@@ -14,7 +14,7 @@ from app.schemas.intelligence import (
     ROIResponse,
 )
 from app.models.user import User
-from app.schemas.market_data import EconomicIndicatorResponse, MarketDataResponse, MarketOverview, WeatherSnapshotResponse
+from app.schemas.market_data import CurrencyRateResponse, EconomicIndicatorResponse, MarketDataResponse, MarketOverview, WeatherSnapshotResponse
 from app.services.aggregation.market_aggregator import COMMODITY_SYMBOLS, GLOBAL_REALESTATE_SYMBOLS, UAE_CORE_SYMBOLS, market_aggregator
 from app.services.intelligence.property_valuation_service import property_valuation
 from app.services.market_service import MarketService
@@ -34,38 +34,8 @@ async def get_market_overview(
     **Public Access:** Yes
     """
     del request, current_user
-    stocks = await MarketService.get_latest_market_data_for_symbols(
-        db,
-        [item.symbol for item in UAE_CORE_SYMBOLS],
-        limit=20,
-        include_watchlist_fallback=True,
-    )
-    indices = await MarketService.get_latest_market_data(db, MarketType.INDEX, limit=10)
-    global_real_estate = await MarketService.get_latest_market_data_for_symbols(
-        db,
-        [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS],
-        limit=16,
-    )
-    commodities = await MarketService.get_latest_market_data_for_symbols(
-        db,
-        [item.symbol for item in COMMODITY_SYMBOLS],
-        limit=6,
-    )
-    real_estate = await MarketService.get_real_estate_companies(db)
-    currencies = await MarketService.get_latest_currency_rates(db, limit=10)
-    economic_indicators = await MarketService.get_latest_economic_indicators(db, limit=12)
-    weather = await MarketService.get_market_weather()
-    return MarketOverview(
-        stocks=[MarketDataResponse.model_validate(item) for item in stocks],
-        indices=[MarketDataResponse.model_validate(item) for item in indices],
-        global_real_estate=[MarketDataResponse.model_validate(item) for item in global_real_estate],
-        commodities=[MarketDataResponse.model_validate(item) for item in commodities],
-        currencies=currencies,
-        economic_indicators=[EconomicIndicatorResponse.model_validate(item) for item in economic_indicators],
-        real_estate_companies=[MarketDataResponse.model_validate(item) for item in real_estate],
-        weather=WeatherSnapshotResponse.model_validate(weather) if weather else None,
-        market_status=market_aggregator._get_market_status(),
-    )
+    payload = await MarketService.get_market_overview_payload(db)
+    return MarketOverview.model_validate(payload)
 
 
 @router.get("/stocks", response_model=list[MarketDataResponse])
@@ -81,7 +51,7 @@ async def get_stocks(
     **Public Access:** Yes
     """
     del request, current_user
-    data = await MarketService.get_latest_market_data(db, MarketType.STOCK, limit=limit)
+    data = await MarketService.get_priority_market_board(db, limit=limit)
     return [MarketDataResponse.model_validate(item) for item in data]
 
 
@@ -97,6 +67,7 @@ async def get_real_estate_companies(
     **Public Access:** Yes
     """
     del request, current_user
+    await MarketService.ensure_canonical_watchlist(db)
     data = await MarketService.get_real_estate_companies(db)
     return [MarketDataResponse.model_validate(item) for item in data]
 

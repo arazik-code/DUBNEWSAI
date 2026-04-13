@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import math
 import re
+import statistics
 from typing import Any
 
 import feedparser
@@ -14,6 +16,7 @@ from loguru import logger
 
 from app.config import get_settings
 from app.core.circuit_breaker import CircuitBreakerOpenError, provider_health
+from app.core.providers import provider_registry
 from app.integrations.alpha_vantage_client import AlphaVantageClient
 from app.integrations.news_clients import (
     BingNewsClient,
@@ -64,6 +67,7 @@ class NormalizedMarketQuote:
     change_percent: float
     currency: str = "AED"
     provider: str = "unknown"
+    supporting_providers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -73,6 +77,7 @@ class NormalizedCurrencyRate:
     rate: float
     timestamp: datetime
     source: str = "unknown"
+    supporting_sources: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -240,7 +245,10 @@ class FreeDataAggregator:
         try:
             if value in (None, "", "None"):
                 return None
-            return float(str(value).replace("%", "").replace(",", ""))
+            parsed = float(str(value).replace("%", "").replace(",", ""))
+            if not math.isfinite(parsed):
+                return None
+            return parsed
         except Exception:
             return None
 
@@ -798,6 +806,135 @@ class FreeDataAggregator:
                     all_aliases.append(alias)
         return aliases_by_symbol, all_aliases
 
+    @staticmethod
+    def _registry_provider_name(provider_name: str) -> str:
+        aliases = {
+            "yahoo_chart": "yahoo_finance",
+        }
+        return aliases.get(provider_name, provider_name)
+
+    @staticmethod
+    def _is_provider_enabled(provider_name: str) -> bool:
+        provider = provider_registry.get_provider(FreeDataAggregator._registry_provider_name(provider_name))
+        return bool(provider.enabled) if provider is not None else False
+
+    @staticmethod
+    def _provider_priority(provider_name: str) -> tuple[int, float]:
+        provider = provider_registry.get_provider(FreeDataAggregator._registry_provider_name(provider_name))
+        if provider is None:
+            return (99, 0.0)
+        priority = int(provider.priority.value if hasattr(provider.priority, "value") else provider.priority)
+        return (priority, float(provider.reliability_score or 0.0))
+
+    @staticmethod
+    def _default_currency_for_watchlist(watchlist: WatchlistSymbol) -> str:
+        if watchlist.exchange in {StockExchange.DFM, StockExchange.ADX}:
+            return "AED"
+        if watchlist.market_type == MarketType.COMMODITY:
+            return "USD"
+        if watchlist.symbol.upper() == "^FTSE":
+            return "GBP"
+        if watchlist.symbol.upper() == "^N225":
+            return "JPY"
+        if watchlist.symbol.upper() == "^HSI":
+            return "HKD"
+        return "USD"
+
+    @staticmethod
+    def _quote_completeness_score(quote: NormalizedMarketQuote) -> int:
+        optional_values = [
+            quote.open_price,
+            quote.high_price,
+            quote.low_price,
+            quote.previous_close,
+            quote.market_cap,
+        ]
+        return sum(1 for value in optional_values if value not in (None, 0)) + (1 if quote.volume else 0)
+
+    @classmethod
+    def _pick_primary_quote(cls, quotes: list[NormalizedMarketQuote]) -> NormalizedMarketQuote:
+        return min(
+            quotes,
+            key=lambda quote: (
+                cls._provider_priority(quote.provider)[0],
+                -cls._provider_priority(quote.provider)[1],
+                -cls._quote_completeness_score(quote),
+                quote.alias_used,
+            ),
+        )
+
+    @classmethod
+    def _pick_primary_currency_rate(cls, rates: list[NormalizedCurrencyRate]) -> NormalizedCurrencyRate:
+        return min(
+            rates,
+            key=lambda rate: (
+                cls._provider_priority(rate.source)[0],
+                -cls._provider_priority(rate.source)[1],
+                -rate.timestamp.timestamp(),
+            ),
+        )
+
+    @classmethod
+    def _merge_currency_rates_for_pair(cls, rates: list[NormalizedCurrencyRate]) -> NormalizedCurrencyRate:
+        primary = cls._pick_primary_currency_rate(rates)
+        consensus_values = [rate.rate for rate in rates if rate.rate > 0]
+        consensus_rate = statistics.median(consensus_values) if consensus_values else primary.rate
+        latest_timestamp = max(rate.timestamp for rate in rates)
+        supporting_sources = list(
+            dict.fromkeys(rate.source for rate in rates if rate.source and rate.source != primary.source)
+        )
+        return NormalizedCurrencyRate(
+            from_currency=primary.from_currency,
+            to_currency=primary.to_currency,
+            rate=consensus_rate,
+            timestamp=latest_timestamp,
+            source=primary.source,
+            supporting_sources=supporting_sources,
+        )
+
+    @staticmethod
+    def _select_validation_candidates(watchlist_symbols: list[WatchlistSymbol]) -> list[WatchlistSymbol]:
+        segment_limits = {
+            "uae": 6,
+            "global": 4,
+            "indices": 3,
+            "commodities": 3,
+        }
+        selected: list[WatchlistSymbol] = []
+        usage: dict[str, int] = {key: 0 for key in segment_limits}
+
+        def resolve_segment(item: WatchlistSymbol) -> str:
+            if item.market_type == MarketType.INDEX:
+                return "indices"
+            if item.market_type == MarketType.COMMODITY:
+                return "commodities"
+            if item.exchange in {StockExchange.DFM, StockExchange.ADX}:
+                return "uae"
+            return "global"
+
+        for item in sorted(watchlist_symbols, key=lambda record: record.priority, reverse=True):
+            segment = resolve_segment(item)
+            if usage[segment] >= segment_limits[segment]:
+                continue
+            usage[segment] += 1
+            selected.append(item)
+        return selected
+
+    def _enabled_quote_fetchers(self, *, include_yahoo_chart: bool = True) -> list[tuple[str, Any]]:
+        fetchers: list[tuple[str, Any]] = []
+        if include_yahoo_chart and self._is_provider_enabled("yahoo_finance"):
+            fetchers.append(("yahoo_chart", self._fetch_yahoo_chart_quote))
+        for provider_name, fetcher in [
+            ("twelve_data", self._fetch_twelve_data_quote),
+            ("finnhub", self._fetch_finnhub_quote),
+            ("financial_modeling_prep", self._fetch_fmp_quote),
+            ("alpha_vantage", self._fetch_alpha_vantage_quote),
+            ("marketstack", self._fetch_marketstack_quote),
+        ]:
+            if self._is_provider_enabled(provider_name):
+                fetchers.append((provider_name, fetcher))
+        return fetchers
+
     async def _download_yahoo_history(self, aliases: list[str]) -> Any:
         def _download() -> Any:
             return yf.download(
@@ -862,7 +999,7 @@ class FreeDataAggregator:
             market_cap=self._safe_float(meta.get("marketCap")),
             change=change,
             change_percent=change_percent,
-            currency=str(meta.get("currency") or "AED"),
+            currency=str(meta.get("currency") or self._default_currency_for_watchlist(watchlist)),
             provider="yahoo_chart",
         )
 
@@ -920,6 +1057,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=change,
             change_percent=change_percent,
+            currency=self._default_currency_for_watchlist(watchlist),
             provider="yahoo_finance",
         )
 
@@ -929,7 +1067,10 @@ class FreeDataAggregator:
         aliases_by_symbol, _ = self._build_symbol_aliases(watchlist_symbols)
         yahoo_aliases = [aliases_by_symbol[item.symbol.upper()][0] for item in watchlist_symbols if aliases_by_symbol.get(item.symbol.upper())]
         try:
-            history = await self._download_yahoo_history(yahoo_aliases)
+            history = await provider_health.call_provider(
+                "yahoo_finance",
+                lambda: self._download_yahoo_history(yahoo_aliases),
+            )
         except Exception as exc:
             logger.warning("Yahoo Finance batch download failed: {}", str(exc))
             history = None
@@ -949,7 +1090,10 @@ class FreeDataAggregator:
                 continue
             for alias in aliases_by_symbol[item.symbol.upper()]:
                 try:
-                    quote = await self._fetch_yahoo_chart_quote(item, alias)
+                    quote = await provider_health.call_provider(
+                        "yahoo_finance",
+                        lambda item=item, alias=alias: self._fetch_yahoo_chart_quote(item, alias),
+                    )
                 except Exception as exc:
                     logger.debug("Yahoo chart quote failed for {} via {}: {}", item.symbol, alias, str(exc))
                     continue
@@ -982,7 +1126,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=self._safe_float(payload.get("change")) or 0.0,
             change_percent=self._safe_float(payload.get("percent_change")) or 0.0,
-            currency=payload.get("currency", "AED"),
+            currency=payload.get("currency", self._default_currency_for_watchlist(watchlist)),
             provider="twelve_data",
         )
 
@@ -1011,6 +1155,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=change,
             change_percent=change_percent,
+            currency=self._default_currency_for_watchlist(watchlist),
             provider="finnhub",
         )
 
@@ -1049,6 +1194,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=0.0,
             change_percent=0.0,
+            currency=self._default_currency_for_watchlist(watchlist),
             provider="financial_modeling_prep",
         )
 
@@ -1080,6 +1226,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=self._safe_float(payload.get("09. change")) or 0.0,
             change_percent=self._safe_float(payload.get("10. change percent")) or 0.0,
+            currency=self._default_currency_for_watchlist(watchlist),
             provider="alpha_vantage",
         )
 
@@ -1116,6 +1263,7 @@ class FreeDataAggregator:
             market_cap=None,
             change=change,
             change_percent=change_percent,
+            currency=self._default_currency_for_watchlist(watchlist),
             provider="marketstack",
         )
 
@@ -1131,28 +1279,64 @@ class FreeDataAggregator:
         }
         return mapping.get(fetcher.__name__, fetcher.__name__)
 
+    @staticmethod
+    def _merge_market_quotes(primary: NormalizedMarketQuote, validation: NormalizedMarketQuote) -> NormalizedMarketQuote:
+        merged_supporting = list(
+            dict.fromkeys(
+                [
+                    *primary.supporting_providers,
+                    validation.provider,
+                    *validation.supporting_providers,
+                ]
+            )
+        )
+        return NormalizedMarketQuote(
+            symbol=primary.symbol,
+            alias_used=primary.alias_used,
+            name=primary.name,
+            market_type=primary.market_type,
+            exchange=primary.exchange,
+            price=primary.price,
+            open_price=primary.open_price if primary.open_price is not None else validation.open_price,
+            high_price=primary.high_price if primary.high_price is not None else validation.high_price,
+            low_price=primary.low_price if primary.low_price is not None else validation.low_price,
+            previous_close=primary.previous_close if primary.previous_close is not None else validation.previous_close,
+            volume=primary.volume or validation.volume,
+            market_cap=primary.market_cap if primary.market_cap is not None else validation.market_cap,
+            change=primary.change,
+            change_percent=primary.change_percent,
+            currency=primary.currency or validation.currency,
+            provider=primary.provider,
+            supporting_providers=merged_supporting,
+        )
+
+    async def _call_quote_provider(
+        self,
+        provider_name: str,
+        fetcher: Any,
+        watchlist: WatchlistSymbol,
+        alias: str,
+    ) -> NormalizedMarketQuote | None:
+        async def _wrapped() -> NormalizedMarketQuote | None:
+            return await fetcher(watchlist, alias)
+
+        return await provider_health.call_provider(provider_name, _wrapped)
+
     async def _fetch_fallback_quote_for_symbol(self, watchlist: WatchlistSymbol, aliases: list[str]) -> NormalizedMarketQuote | None:
-        fetchers = [
-            self._fetch_yahoo_chart_quote,
-            self._fetch_marketstack_quote,
-            self._fetch_twelve_data_quote,
-            self._fetch_finnhub_quote,
-            self._fetch_fmp_quote,
-            self._fetch_alpha_vantage_quote,
-        ]
+        fetchers = self._enabled_quote_fetchers(include_yahoo_chart=True)
         for alias in aliases:
-            for fetcher in fetchers:
+            for provider_name, fetcher in fetchers:
                 try:
-                    quote = await fetcher(watchlist, alias)
+                    quote = await self._call_quote_provider(provider_name, fetcher, watchlist, alias)
                 except Exception as exc:
-                    logger.debug("Quote provider {} failed for {}: {}", self._quote_provider_name(fetcher), alias, str(exc))
+                    logger.debug("Quote provider {} failed for {}: {}", provider_name, alias, str(exc))
                     continue
                 if quote is not None:
                     return quote
         return None
 
     async def fetch_market_quotes(self, watchlist_symbols: list[WatchlistSymbol]) -> list[NormalizedMarketQuote]:
-        yahoo_quotes = await self._fetch_yahoo_quotes(watchlist_symbols)
+        yahoo_quotes = await self._fetch_yahoo_quotes(watchlist_symbols) if self._is_provider_enabled("yahoo_finance") else []
         quotes_by_symbol = {quote.symbol: quote for quote in yahoo_quotes}
         aliases_by_symbol, _ = self._build_symbol_aliases(watchlist_symbols)
 
@@ -1162,6 +1346,45 @@ class FreeDataAggregator:
             quote = await self._fetch_fallback_quote_for_symbol(item, aliases_by_symbol[item.symbol.upper()])
             if quote is not None:
                 quotes_by_symbol[item.symbol.upper()] = quote
+
+        validation_fetchers = self._enabled_quote_fetchers(include_yahoo_chart=False)
+        if not validation_fetchers:
+            return list(quotes_by_symbol.values())
+
+        validation_rotation = datetime.now(timezone.utc).hour % len(validation_fetchers)
+        rotated_fetchers = validation_fetchers[validation_rotation:] + validation_fetchers[:validation_rotation]
+
+        for item in self._select_validation_candidates(watchlist_symbols):
+            primary_quote = quotes_by_symbol.get(item.symbol.upper())
+            if primary_quote is None:
+                continue
+            attempted_providers = {self._registry_provider_name(primary_quote.provider), *primary_quote.supporting_providers}
+            validation_quotes: list[NormalizedMarketQuote] = []
+            for provider_name, fetcher in rotated_fetchers[:3]:
+                if self._registry_provider_name(provider_name) in attempted_providers:
+                    continue
+                validation_quote: NormalizedMarketQuote | None = None
+                for alias in aliases_by_symbol[item.symbol.upper()]:
+                    try:
+                        validation_quote = await self._call_quote_provider(provider_name, fetcher, item, alias)
+                    except Exception as exc:
+                        logger.debug("Validation provider {} failed for {}: {}", provider_name, alias, str(exc))
+                        continue
+                    if validation_quote is not None:
+                        break
+                if validation_quote is None:
+                    continue
+                validation_quotes.append(validation_quote)
+                attempted_providers.add(self._registry_provider_name(provider_name))
+
+            if validation_quotes:
+                merged_quotes = [primary_quote, *validation_quotes]
+                canonical = self._pick_primary_quote(merged_quotes)
+                for candidate in merged_quotes:
+                    if candidate is canonical:
+                        continue
+                    canonical = self._merge_market_quotes(canonical, candidate)
+                quotes_by_symbol[item.symbol.upper()] = canonical
 
         return list(quotes_by_symbol.values())
 
@@ -1220,9 +1443,43 @@ class FreeDataAggregator:
                     to_currency=quote_currency,
                     rate=rate,
                     timestamp=self._parse_datetime(payload.get("time_last_update_utc")),
-                    source="exchangerate_api",
+                    source="exchange_rate_api",
                 )
             )
+        return rates
+
+    async def _fetch_frankfurter_rates(self) -> list[NormalizedCurrencyRate]:
+        pairs_by_base: dict[str, set[str]] = {}
+        for base_currency, quote_currency in self.CURRENCY_PAIRS:
+            pairs_by_base.setdefault(base_currency, set()).add(quote_currency)
+
+        rates: list[NormalizedCurrencyRate] = []
+        for base_currency, quote_currencies in pairs_by_base.items():
+            payload: dict[str, Any] | None = None
+            try:
+                payload = await self._request_json(
+                    settings.FRANKFURTER_API_URL,
+                    params={"base": base_currency, "symbols": ",".join(sorted(quote_currencies))},
+                )
+            except Exception:
+                payload = None
+            if not payload or not payload.get("rates"):
+                continue
+
+            timestamp = self._parse_datetime(payload.get("date"))
+            for quote_currency, rate in payload.get("rates", {}).items():
+                normalized_rate = self._safe_float(rate)
+                if normalized_rate is None:
+                    continue
+                rates.append(
+                    NormalizedCurrencyRate(
+                        from_currency=base_currency,
+                        to_currency=quote_currency,
+                        rate=normalized_rate,
+                        timestamp=timestamp,
+                        source="frankfurter",
+                    )
+                )
         return rates
 
     async def _fetch_currencyapi_rates(self) -> list[NormalizedCurrencyRate]:
@@ -1337,54 +1594,71 @@ class FreeDataAggregator:
         return rates
 
     async def fetch_currency_rates(self) -> list[NormalizedCurrencyRate]:
-        massive_rates = await self._fetch_massive_forex_rates()
-        if massive_rates:
-            return massive_rates
+        provider_plan = [
+            ("massive", self._fetch_massive_forex_rates),
+            ("frankfurter", self._fetch_frankfurter_rates),
+            ("exchange_rate_api", self._fetch_exchange_rate_api_rates),
+            ("currencyapi", self._fetch_currencyapi_rates),
+            ("currencyfreaks", self._fetch_currencyfreaks_rates),
+            ("fixer", self._fetch_fixer_rates),
+        ]
 
-        pairs_by_base: dict[str, set[str]] = {}
-        for base_currency, quote_currency in self.CURRENCY_PAIRS:
-            pairs_by_base.setdefault(base_currency, set()).add(quote_currency)
-
-        rates: list[NormalizedCurrencyRate] = []
-        for base_currency, quote_currencies in pairs_by_base.items():
-            payload: dict[str, Any] | None = None
-            try:
-                payload = await self._request_json(
-                    settings.FRANKFURTER_API_URL,
-                    params={"base": base_currency, "symbols": ",".join(sorted(quote_currencies))},
-                )
-            except Exception:
-                payload = None
-            if not payload or not payload.get("rates"):
+        selected_plan: list[tuple[str, Any]] = []
+        rotating_plan: list[tuple[str, Any]] = []
+        for index, item in enumerate(provider_plan):
+            provider_name, _ = item
+            if not self._is_provider_enabled(provider_name):
                 continue
+            if index < 2:
+                selected_plan.append(item)
+            else:
+                rotating_plan.append(item)
 
-            timestamp = self._parse_datetime(payload.get("date"))
-            for quote_currency, rate in payload.get("rates", {}).items():
-                normalized_rate = self._safe_float(rate)
-                if normalized_rate is None:
+        if rotating_plan:
+            rotation = datetime.now(timezone.utc).hour % len(rotating_plan)
+            rotated = rotating_plan[rotation:] + rotating_plan[:rotation]
+            selected_plan.extend(rotated[:2])
+
+        all_rates: list[NormalizedCurrencyRate] = []
+        if selected_plan:
+            results = await asyncio.gather(
+                *(provider_health.call_provider(provider_name, fetcher) for provider_name, fetcher in selected_plan),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception):
                     continue
-                rates.append(
-                    NormalizedCurrencyRate(
-                        from_currency=base_currency,
-                        to_currency=quote_currency,
-                        rate=normalized_rate,
-                        timestamp=timestamp,
-                        source="frankfurter",
-                    )
+                all_rates.extend(result)
+
+        pairs_needed = {(base, quote) for base, quote in self.CURRENCY_PAIRS}
+        covered_pairs = {(rate.from_currency, rate.to_currency) for rate in all_rates}
+        if covered_pairs != pairs_needed:
+            remaining_plan = [
+                item
+                for item in provider_plan
+                if self._is_provider_enabled(item[0]) and item not in selected_plan
+            ]
+            if remaining_plan:
+                results = await asyncio.gather(
+                    *(provider_health.call_provider(provider_name, fetcher) for provider_name, fetcher in remaining_plan),
+                    return_exceptions=True,
                 )
+                for result in results:
+                    if isinstance(result, Exception):
+                        continue
+                    all_rates.extend(result)
 
-        if rates:
-            return rates
-
-        for fallback_fetcher in (
-            self._fetch_exchange_rate_api_rates,
-            self._fetch_currencyapi_rates,
-            self._fetch_currencyfreaks_rates,
-            self._fetch_fixer_rates,
-        ):
-            fallback_rates = await fallback_fetcher()
-            if fallback_rates:
-                return fallback_rates
+        if all_rates:
+            grouped_rates: dict[tuple[str, str], list[NormalizedCurrencyRate]] = {}
+            for rate in all_rates:
+                grouped_rates.setdefault((rate.from_currency, rate.to_currency), []).append(rate)
+            merged_rates = [
+                self._merge_currency_rates_for_pair(grouped_rates[pair])
+                for pair in sorted(grouped_rates)
+                if grouped_rates[pair]
+            ]
+            if merged_rates:
+                return merged_rates
 
         if not settings.ALPHA_VANTAGE_KEY:
             return []
@@ -1393,7 +1667,10 @@ class FreeDataAggregator:
         try:
             fallback_rates: list[NormalizedCurrencyRate] = []
             for from_currency, to_currency in self.CURRENCY_PAIRS:
-                payload = await client.get_currency_exchange_rate(from_currency, to_currency)
+                payload = await provider_health.call_provider(
+                    "alpha_vantage",
+                    lambda from_currency=from_currency, to_currency=to_currency: client.get_currency_exchange_rate(from_currency, to_currency),
+                )
                 rate = self._safe_float(payload.get("5. Exchange Rate"))
                 if rate is None:
                     continue

@@ -155,12 +155,13 @@ async def _aggregate_full_market_data() -> dict[str, object]:
                     asset_class=quote.market_type.value,
                     region=region,
                 )
+                provider_names = [quote.provider, *getattr(quote, "supporting_providers", [])]
                 await ProviderObservabilityService.attach_market_sources(
                     db,
                     market_data=market_data,
-                    provider_names=[quote.provider],
+                    provider_names=provider_names,
                     primary_provider=quote.provider,
-                    confidence_score=95.0 if quote.price > 0 else 20.0,
+                    confidence_score=(95.0 + min(4.0, len(provider_names) - 1) * 1.25) if quote.price > 0 else 20.0,
                     data_completeness=100.0 if quote.price > 0 else 0.0,
                 )
                 await db.commit()

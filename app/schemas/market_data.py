@@ -69,6 +69,65 @@ class WeatherSnapshotResponse(BaseModel):
     source: str
 
 
+class MarketBoardHealthResponse(BaseModel):
+    board: str
+    status: str
+    total_rows: int
+    live_rows: int
+    fallback_rows: int
+    last_updated: datetime | None = None
+    providers: list[str] = []
+
+
+class MarketCoverageSnapshotResponse(BaseModel):
+    tracked_symbols: int
+    live_symbols: int
+    fallback_symbols: int
+    fx_pairs: int
+    macro_indicators: int
+    provider_count: int
+
+
+class ProviderUtilizationResponse(BaseModel):
+    provider: str
+    type: str
+    health: str
+    circuit_state: str
+    total_calls: int
+    successful_calls: int
+    failed_calls: int
+    last_success_at: datetime | None = None
+    last_failure_at: datetime | None = None
+
+
+class MarketInsightHighlightResponse(BaseModel):
+    title: str
+    value: str
+    context: str
+
+
+class MarketBriefResponse(BaseModel):
+    headline: str
+    narrative: str
+    focus_areas: list[str] = []
+    confidence: str
+
+
+class MarketCoverageAlertResponse(BaseModel):
+    board: str
+    severity: str
+    message: str
+    action: str
+    affected_symbols: list[str] = []
+
+
+class MarketProviderMixResponse(BaseModel):
+    active_count: int
+    dormant_count: int
+    top_contributors: list[str] = []
+    dormant_providers: list[str] = []
+
+
 class MarketOverview(BaseModel):
     stocks: list[MarketDataResponse]
     indices: list[MarketDataResponse]
@@ -79,3 +138,10 @@ class MarketOverview(BaseModel):
     real_estate_companies: list[MarketDataResponse]
     weather: WeatherSnapshotResponse | None = None
     market_status: dict[str, str] | None = None
+    board_health: list[MarketBoardHealthResponse] = []
+    coverage_snapshot: MarketCoverageSnapshotResponse | None = None
+    provider_utilization: list[ProviderUtilizationResponse] = []
+    provider_mix: MarketProviderMixResponse | None = None
+    intelligence_highlights: list[MarketInsightHighlightResponse] = []
+    market_brief: MarketBriefResponse | None = None
+    coverage_alerts: list[MarketCoverageAlertResponse] = []

@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+from app.services.aggregation.news_aggregator import NewsAggregator
+
 
 def create_user_and_token(client):
     client.post(
@@ -118,3 +120,27 @@ def test_create_news_requires_authentication(client):
         },
     )
     assert response.status_code == 401
+
+
+def test_news_query_plan_rotates_high_priority_provider_queries():
+    aggregator = NewsAggregator()
+    queries = aggregator._queries_for_provider(
+        "newsapi",
+        "Dubai real estate",
+        datetime(2026, 4, 13, 9, 0, tzinfo=timezone.utc),
+    )
+
+    assert queries[0] == "Dubai real estate"
+    assert len(queries) == 3
+    assert len(set(queries)) == len(queries)
+
+
+def test_news_query_plan_keeps_rss_single_query():
+    aggregator = NewsAggregator()
+    queries = aggregator._queries_for_provider(
+        "rss_feeds",
+        "Dubai real estate",
+        datetime(2026, 4, 13, 9, 0, tzinfo=timezone.utc),
+    )
+
+    assert queries == ["Dubai real estate"]

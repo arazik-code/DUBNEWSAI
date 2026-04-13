@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,13 @@ from app.models.sources import ArticleSource, DataProvider, MarketDataSource, Pr
 
 
 class ProviderObservabilityService:
+    @staticmethod
+    def _coerce_int(value: int | None) -> int:
+        try:
+            return int(value or 0)
+        except Exception:
+            return 0
+
     @staticmethod
     def _infer_provider_type(provider_name: str, fetch_type: str) -> str:
         registry_provider = provider_registry.get_provider(provider_name)
@@ -50,15 +59,35 @@ class ProviderObservabilityService:
 
             state = provider_health.snapshot(config.name)
             provider.is_healthy = state.state != "open"
-            provider.reliability_score = state.reliability if state.successes or state.failures else config.reliability_score
-            provider.total_calls = state.successes + state.failures
-            provider.successful_calls = state.successes
-            provider.failed_calls = state.failures
-            provider.last_success_at = state.last_success_at
-            provider.last_failure_at = state.last_failure_at
-            provider.circuit_state = state.state
-            provider.circuit_opened_at = state.opened_at
-            provider.failure_count = state.consecutive_failures
+            provider.reliability_score = (
+                state.reliability if state.successes or state.failures else (provider.reliability_score or config.reliability_score)
+            )
+            provider.total_calls = max(
+                ProviderObservabilityService._coerce_int(provider.total_calls),
+                state.successes + state.failures,
+            )
+            provider.successful_calls = max(
+                ProviderObservabilityService._coerce_int(provider.successful_calls),
+                state.successes,
+            )
+            provider.failed_calls = max(
+                ProviderObservabilityService._coerce_int(provider.failed_calls),
+                state.failures,
+            )
+            if state.last_success_at and (
+                provider.last_success_at is None or state.last_success_at > provider.last_success_at
+            ):
+                provider.last_success_at = state.last_success_at
+            if state.last_failure_at and (
+                provider.last_failure_at is None or state.last_failure_at > provider.last_failure_at
+            ):
+                provider.last_failure_at = state.last_failure_at
+            provider.circuit_state = state.state or provider.circuit_state or "closed"
+            provider.circuit_opened_at = state.opened_at or provider.circuit_opened_at
+            provider.failure_count = max(
+                ProviderObservabilityService._coerce_int(provider.failure_count),
+                state.consecutive_failures,
+            )
 
             synced[config.name] = provider
 
@@ -76,6 +105,7 @@ class ProviderObservabilityService:
         task_id: str | None = None,
     ) -> dict[str, DataProvider]:
         providers = await ProviderObservabilityService.sync_registry_to_db(db)
+        observed_at = datetime.now(timezone.utc)
 
         for provider_name, stats in provider_stats.items():
             provider = providers.get(provider_name)
@@ -91,6 +121,18 @@ class ProviderObservabilityService:
             status = str(stats.get("status", "success"))
             count = int(stats.get("count", 0) or 0)
             last_error = stats.get("last_error")
+            provider.circuit_state = str(stats.get("state") or provider.circuit_state or "closed")
+            provider.reliability_score = float(stats.get("reliability") or provider.reliability_score or 0.0)
+            provider.is_healthy = provider.circuit_state != "open"
+            if status == "success":
+                provider.total_calls = ProviderObservabilityService._coerce_int(provider.total_calls) + 1
+                provider.successful_calls = ProviderObservabilityService._coerce_int(provider.successful_calls) + 1
+                provider.last_success_at = observed_at
+            elif status == "failed":
+                provider.total_calls = ProviderObservabilityService._coerce_int(provider.total_calls) + 1
+                provider.failed_calls = ProviderObservabilityService._coerce_int(provider.failed_calls) + 1
+                provider.last_failure_at = observed_at
+
             db.add(
                 ProviderFetchLog(
                     provider=provider,
