@@ -234,6 +234,30 @@ class ProviderRegistry:
     def _register_market_providers(self) -> None:
         self.register(
             ProviderConfig(
+                name="dfm_marketwatch",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.CRITICAL,
+                rate_limit=999999,
+                cost_per_call=0.0,
+                reliability_score=96.0,
+                enabled=True,
+                base_url="https://api2.dfm.ae/mw/v1/stocks",
+            )
+        )
+        self.register(
+            ProviderConfig(
+                name="stockanalysis_market",
+                type=ProviderType.MARKET,
+                priority=ProviderPriority.HIGH,
+                rate_limit=999999,
+                cost_per_call=0.0,
+                reliability_score=86.0,
+                enabled=True,
+                base_url="https://stockanalysis.com/quote",
+            )
+        )
+        self.register(
+            ProviderConfig(
                 name="yahoo_finance",
                 type=ProviderType.MARKET,
                 priority=ProviderPriority.CRITICAL,

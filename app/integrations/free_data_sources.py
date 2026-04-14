@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from html import unescape
 import math
 import re
 import statistics
@@ -123,20 +124,24 @@ class FreeDataAggregator:
     }
 
     UAE_SYMBOL_ALIASES: dict[str, list[str]] = {
-        "EMAAR": ["EMAAR.DU", "EMAAR:DFM", "EMAARDEV.AE", "EMAAR.AE"],
-        "DAMAC": ["DAMAC.DU", "DAMAC:DFM", "DAMAC.AE"],
-        "DEYAAR": ["DEYAAR.DU", "DEYAAR:DFM", "DEYAAR.AE"],
-        "ALDAR": ["ALDAR.AD", "ALDAR:ADX", "ALDAR.AE"],
-        "AMLAK": ["AMLAK.DU", "AMLAK:DFM", "AMLAK.AE"],
-        "UPP": ["UPP.DU", "UPP:DFM", "UNIONPRO.AE", "UPP.AE"],
-        "ESHRAQ": ["ESHRAQ.AD", "ESHRAQ:ADX", "ESHRAQ.AE"],
-        "RAKPROP": ["RAKPROP.AE", "RAKPROP:ADX", "RAKPROP.AD"],
-        "DFM": ["DFM.DU", "DFM:DFM"],
-        "DIC": ["DIC.DU", "DIC:DFM"],
-        "ADCB": ["ADCB.AD", "ADCB:ADX"],
-        "FAB": ["FAB.AD", "FAB:ADX"],
-        "ADNOC": ["ADNOCDIST.AD", "ADNOC.AD", "ADNOCDIST:ADX"],
+        "EMAAR": ["EMAAR.DU", "EMAAR:DFM", "EMAARDEV.AE", "EMAAR.AE", "EMAAR"],
+        "DAMAC": ["DAMAC", "DAMAC.DU", "DAMAC:DFM", "DAMAC.AE"],
+        "DEYAAR": ["DEYAAR.DU", "DEYAAR:DFM", "DEYAAR.AE", "DEYAAR"],
+        "ALDAR": ["ALDAR", "ALDAR.AD", "ALDAR:ADX", "ALDAR.AE"],
+        "AMLAK": ["AMLAK.DU", "AMLAK:DFM", "AMLAK.AE", "AMLAK"],
+        "UPP": ["UPP.DU", "UPP:DFM", "UNIONPRO.AE", "UPP.AE", "UPP"],
+        "ESHRAQ": ["ESHRAQ", "ESHRAQ.AD", "ESHRAQ:ADX", "ESHRAQ.AE"],
+        "RAKPROP": ["RAKPROP", "RAKPROP.AE", "RAKPROP:ADX", "RAKPROP.AD"],
+        "DFM": ["DFM.AE", "DFM.DU", "DFM:DFM", "DFM"],
+        "DIC": ["DIC.AE", "DIC.DU", "DIC:DFM", "DIC"],
+        "ADCB": ["ADCB.AB", "ADCB", "ADCB.AD", "ADCB:ADX"],
+        "FAB": ["FAB", "FAB.AD", "FAB:ADX"],
+        "ADNOC": ["ADNOCDIST", "ADNOCDIST.AD", "ADNOC.AD", "ADNOCDIST:ADX"],
         "^DFM": ["DFMGI.AE", "^DFMGI"],
+    }
+
+    STOCKANALYSIS_SYMBOL_OVERRIDES: dict[str, str] = {
+        "ADNOC": "ADNOCDIST",
     }
 
     CURRENCY_PAIRS: list[tuple[str, str]] = [
@@ -203,6 +208,7 @@ class FreeDataAggregator:
             follow_redirects=True,
             headers={"User-Agent": "DUBNEWSAI/1.0 (+https://dubnewsai.com; Dubai real estate intelligence platform)"},
         )
+        self._dfm_stock_cache: tuple[datetime, dict[str, dict[str, Any]]] | None = None
 
     async def close(self) -> None:
         await self.client.aclose()
@@ -257,7 +263,7 @@ class FreeDataAggregator:
         try:
             if value in (None, "", "None"):
                 return 0
-            return int(float(value))
+            return int(float(str(value).replace(",", "").strip()))
         except Exception:
             return 0
 
@@ -813,6 +819,14 @@ class FreeDataAggregator:
         }
         return aliases.get(provider_name, provider_name)
 
+    @classmethod
+    def _stockanalysis_exchange_slug(cls, exchange: StockExchange | None) -> str | None:
+        if exchange == StockExchange.ADX:
+            return "adx"
+        if exchange == StockExchange.DFM:
+            return "dfm"
+        return None
+
     @staticmethod
     def _is_provider_enabled(provider_name: str) -> bool:
         provider = provider_registry.get_provider(FreeDataAggregator._registry_provider_name(provider_name))
@@ -922,6 +936,8 @@ class FreeDataAggregator:
 
     def _enabled_quote_fetchers(self, *, include_yahoo_chart: bool = True) -> list[tuple[str, Any]]:
         fetchers: list[tuple[str, Any]] = []
+        fetchers.append(("stockanalysis_market", self._fetch_stockanalysis_quote))
+        fetchers.append(("dfm_marketwatch", self._fetch_dfm_marketwatch_quote))
         if include_yahoo_chart and self._is_provider_enabled("yahoo_finance"):
             fetchers.append(("yahoo_chart", self._fetch_yahoo_chart_quote))
         for provider_name, fetcher in [
@@ -1103,6 +1119,156 @@ class FreeDataAggregator:
                     break
         return quotes
 
+    async def _get_dfm_marketwatch_quotes(self) -> dict[str, dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        if self._dfm_stock_cache and (now - self._dfm_stock_cache[0]) < timedelta(seconds=45):
+            return self._dfm_stock_cache[1]
+
+        payload = await self._request_json("https://api2.dfm.ae/mw/v1/stocks")
+        rows: list[dict[str, Any]] = payload if isinstance(payload, list) else list(payload.get("data", []) or [])
+        mapping = {
+            str(item.get("id") or "").upper(): item
+            for item in rows
+            if str(item.get("id") or "").strip()
+        }
+        self._dfm_stock_cache = (now, mapping)
+        return mapping
+
+    async def _fetch_dfm_marketwatch_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
+        if watchlist.exchange != StockExchange.DFM:
+            return None
+
+        quotes = await self._get_dfm_marketwatch_quotes()
+        for candidate in (alias.upper(), watchlist.symbol.upper()):
+            row = quotes.get(candidate)
+            if row is None:
+                continue
+
+            price = (
+                self._safe_float(row.get("lastradeprice"))
+                or self._safe_float(row.get("lastsessionprice"))
+                or self._safe_float(row.get("referenceprice"))
+            )
+            previous_close = self._safe_float(row.get("previousclosingprice")) or self._safe_float(row.get("referenceprice"))
+            if price is None or price <= 0:
+                continue
+
+            change = self._safe_float(row.get("netchange"))
+            if change is None and previous_close not in (None, 0):
+                change = price - previous_close
+
+            change_percent = self._safe_float(row.get("changepercentage"))
+            if change_percent is None and previous_close not in (None, 0):
+                change_percent = ((price - previous_close) / previous_close) * 100
+
+            timestamp = self._parse_datetime(row.get("modificationdate"))
+            return NormalizedMarketQuote(
+                symbol=watchlist.symbol.upper(),
+                alias_used=candidate,
+                name=watchlist.name,
+                market_type=watchlist.market_type,
+                exchange=watchlist.exchange,
+                price=price,
+                open_price=self._safe_float(row.get("openingprice")),
+                high_price=self._safe_float(row.get("highestprice")),
+                low_price=self._safe_float(row.get("lowestprice")),
+                previous_close=previous_close,
+                volume=self._safe_int(row.get("totalvolume")),
+                market_cap=self._safe_float(row.get("capital")),
+                change=change or 0.0,
+                change_percent=change_percent or 0.0,
+                currency=self._default_currency_for_watchlist(watchlist),
+                provider="dfm_marketwatch",
+            )
+
+        return None
+
+    @classmethod
+    def _extract_stockanalysis_metric(cls, html: str, label: str) -> str | None:
+        pattern = re.compile(
+            rf">\s*{re.escape(label)}\s*</td>\s*<td[^>]*>\s*([^<]+?)\s*</td>",
+            re.IGNORECASE | re.DOTALL,
+        )
+        match = pattern.search(html)
+        if not match:
+            return None
+        return unescape(match.group(1)).strip()
+
+    @classmethod
+    def _extract_stockanalysis_header(cls, html: str) -> tuple[float | None, float | None, float | None]:
+        price_match = re.search(
+            r'<div class="text-4xl font-bold[^"]*">\s*([\d.,]+)\s*</div>',
+            html,
+            re.IGNORECASE,
+        )
+        if not price_match:
+            return None, None, None
+
+        change_match = re.search(
+            r'<div class="font-semibold[^"]*">\s*([+\-]?[\d.,]+)\s*\(([+\-]?[\d.,]+)%\)\s*</div>',
+            html,
+            re.IGNORECASE,
+        )
+        return (
+            cls._safe_float(price_match.group(1)),
+            cls._safe_float(change_match.group(1)) if change_match else None,
+            cls._safe_float(change_match.group(2)) if change_match else None,
+        )
+
+    async def _fetch_stockanalysis_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
+        exchange_slug = self._stockanalysis_exchange_slug(watchlist.exchange)
+        if exchange_slug is None:
+            return None
+
+        symbol_slug = self.STOCKANALYSIS_SYMBOL_OVERRIDES.get(watchlist.symbol.upper(), watchlist.symbol.upper())
+        url = f"https://stockanalysis.com/quote/{exchange_slug}/{symbol_slug}/"
+        response = await self.client.get(url)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        html = response.text
+
+        price, change, change_percent = self._extract_stockanalysis_header(html)
+        if price is None or price <= 0:
+            return None
+
+        currency_match = re.search(r"Currency is ([A-Z]{3})", html)
+        currency = currency_match.group(1) if currency_match else self._default_currency_for_watchlist(watchlist)
+        open_price = self._safe_float(self._extract_stockanalysis_metric(html, "Open"))
+        previous_close = self._safe_float(self._extract_stockanalysis_metric(html, "Previous Close"))
+        day_range = self._extract_stockanalysis_metric(html, "Day's Range") or self._extract_stockanalysis_metric(html, "Day Range")
+        high_price = None
+        low_price = None
+        if day_range and " - " in day_range:
+            low_raw, high_raw = (part.strip() for part in day_range.split(" - ", 1))
+            low_price = self._safe_float(low_raw)
+            high_price = self._safe_float(high_raw)
+
+        if change is None and previous_close not in (None, 0):
+            change = price - previous_close
+        if change_percent is None and previous_close not in (None, 0):
+            change_percent = ((price - previous_close) / previous_close) * 100
+
+        volume = self._safe_int(self._extract_stockanalysis_metric(html, "Volume"))
+        return NormalizedMarketQuote(
+            symbol=watchlist.symbol.upper(),
+            alias_used=alias,
+            name=watchlist.name,
+            market_type=watchlist.market_type,
+            exchange=watchlist.exchange,
+            price=price,
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            previous_close=previous_close,
+            volume=volume,
+            market_cap=None,
+            change=change or 0.0,
+            change_percent=change_percent or 0.0,
+            currency=currency,
+            provider="stockanalysis_market",
+        )
+
     async def _fetch_twelve_data_quote(self, watchlist: WatchlistSymbol, alias: str) -> NormalizedMarketQuote | None:
         if not settings.TWELVE_DATA_API_KEY:
             return None
@@ -1270,6 +1436,8 @@ class FreeDataAggregator:
     @staticmethod
     def _quote_provider_name(fetcher: Any) -> str:
         mapping = {
+            "_fetch_stockanalysis_quote": "stockanalysis_market",
+            "_fetch_dfm_marketwatch_quote": "dfm_marketwatch",
             "_fetch_yahoo_chart_quote": "yahoo_chart",
             "_fetch_twelve_data_quote": "twelve_data",
             "_fetch_finnhub_quote": "finnhub",
@@ -1335,10 +1503,29 @@ class FreeDataAggregator:
                     return quote
         return None
 
+    @staticmethod
+    def _prefer_regional_quote_source(watchlist: WatchlistSymbol) -> bool:
+        return (
+            watchlist.market_type == MarketType.STOCK
+            and watchlist.exchange in {StockExchange.DFM, StockExchange.ADX}
+        )
+
     async def fetch_market_quotes(self, watchlist_symbols: list[WatchlistSymbol]) -> list[NormalizedMarketQuote]:
-        yahoo_quotes = await self._fetch_yahoo_quotes(watchlist_symbols) if self._is_provider_enabled("yahoo_finance") else []
+        yahoo_eligible_symbols = [item for item in watchlist_symbols if not self._prefer_regional_quote_source(item)]
+        yahoo_quotes = await self._fetch_yahoo_quotes(yahoo_eligible_symbols) if self._is_provider_enabled("yahoo_finance") and yahoo_eligible_symbols else []
         quotes_by_symbol = {quote.symbol: quote for quote in yahoo_quotes}
         aliases_by_symbol, _ = self._build_symbol_aliases(watchlist_symbols)
+
+        for item in watchlist_symbols:
+            if not self._prefer_regional_quote_source(item):
+                continue
+            preferred_quote = await self._fetch_fallback_quote_for_symbol(item, aliases_by_symbol[item.symbol.upper()])
+            if preferred_quote is None:
+                continue
+            existing_quote = quotes_by_symbol.get(item.symbol.upper())
+            if existing_quote is not None and existing_quote.provider != preferred_quote.provider:
+                preferred_quote = self._merge_market_quotes(preferred_quote, existing_quote)
+            quotes_by_symbol[item.symbol.upper()] = preferred_quote
 
         for item in watchlist_symbols:
             if item.symbol.upper() in quotes_by_symbol:

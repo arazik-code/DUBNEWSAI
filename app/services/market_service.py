@@ -298,6 +298,22 @@ class MarketService:
         return sum(1 for row in rows if row.get("is_live_data", True) is not False)
 
     @staticmethod
+    def _sort_rows_for_board(
+        rows: list[dict[str, Any]],
+        ordered_symbols: list[str],
+    ) -> list[dict[str, Any]]:
+        order_index = {symbol.upper(): index for index, symbol in enumerate(ordered_symbols)}
+        ranked = list(rows)
+        ranked.sort(
+            key=lambda row: (
+                0 if row.get("is_live_data", True) is not False else 1,
+                order_index.get(str(row.get("symbol", "")).upper(), len(order_index)),
+                str(row.get("symbol", "")),
+            )
+        )
+        return ranked
+
+    @staticmethod
     def _latest_timestamp(rows: list[dict[str, Any]]) -> datetime | None:
         timestamps: list[datetime] = []
         for row in rows:
@@ -620,10 +636,45 @@ class MarketService:
             limit=len(board_specs),
             include_watchlist_fallback=True,
         )
-        ordered_symbols = {spec.symbol.upper(): index for index, spec in enumerate(board_specs)}
-        rows = list(board_rows)
-        rows.sort(key=lambda row: ordered_symbols.get(str(row.get("symbol", "")).upper(), len(ordered_symbols)))
+        rows = cls._sort_rows_for_board(
+            list(board_rows),
+            [spec.symbol for spec in board_specs],
+        )
         return rows[:limit]
+
+    @classmethod
+    async def get_global_real_estate_board(cls, db: AsyncSession, limit: int = 16) -> list[dict[str, Any]]:
+        await cls.ensure_market_surface_ready(db)
+        rows = await cls.get_latest_market_data_for_symbols(
+            db,
+            [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS],
+            limit=max(limit, len(GLOBAL_REALESTATE_SYMBOLS)),
+            include_watchlist_fallback=True,
+        )
+        ranked = cls._sort_rows_for_board(list(rows), [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS])
+        return ranked[:limit]
+
+    @classmethod
+    async def get_market_indices(cls, db: AsyncSession, limit: int = 10) -> list[dict[str, Any]]:
+        await cls.ensure_market_surface_ready(db)
+        rows = await cls.get_latest_market_data(db, MarketType.INDEX, limit=limit)
+        return cls._sort_rows_for_board(list(rows), [item.symbol for item in INDEX_SYMBOLS])
+
+    @classmethod
+    async def get_market_commodities(cls, db: AsyncSession, limit: int = 10) -> list[dict[str, Any]]:
+        await cls.ensure_market_surface_ready(db)
+        rows = await cls.get_latest_market_data_for_symbols(
+            db,
+            [item.symbol for item in COMMODITY_SYMBOLS],
+            limit=max(limit, len(COMMODITY_SYMBOLS)),
+            include_watchlist_fallback=True,
+        )
+        ranked = cls._sort_rows_for_board(list(rows), [item.symbol for item in COMMODITY_SYMBOLS])
+        return ranked[:limit]
+
+    @classmethod
+    async def get_provider_utilization_summary(cls, db: AsyncSession, limit: int = 8) -> list[dict[str, Any]]:
+        return await cls._get_provider_utilization(db, limit=limit)
 
     @classmethod
     async def get_market_overview_payload(cls, db: AsyncSession) -> dict[str, Any]:
@@ -692,10 +743,10 @@ class MarketService:
             [],
         )
 
-        stocks_rows = list(stocks)
-        index_rows = list(indices)
-        global_rows = list(global_real_estate)
-        commodity_rows = list(commodities)
+        stocks_rows = cls._sort_rows_for_board(list(stocks), [item.symbol for item in UAE_CORE_SYMBOLS])
+        index_rows = cls._sort_rows_for_board(list(indices), [item.symbol for item in INDEX_SYMBOLS])
+        global_rows = cls._sort_rows_for_board(list(global_real_estate), [item.symbol for item in GLOBAL_REALESTATE_SYMBOLS])
+        commodity_rows = cls._sort_rows_for_board(list(commodities), [item.symbol for item in COMMODITY_SYMBOLS])
         real_estate_rows = list(real_estate)
         currencies = [cls._serialize_currency_rate(item) if isinstance(item, CurrencyRate) else dict(item) for item in currencies]
         economic_indicators = [

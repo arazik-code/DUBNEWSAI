@@ -49,8 +49,41 @@ function SummaryTile({ title, value, caption }: { title: string; value: string; 
   )
 }
 
+function getFallbackContext(stock: MarketStock) {
+  if (stock.data_source === "historical_snapshot" && stock.price > 0) {
+    return {
+      title: "Last verified snapshot",
+      value: formatCompactCurrency(stock.price, stock.currency || "AED"),
+      note: "Stored market snapshot"
+    }
+  }
+
+  if (stock.symbol === "DAMAC") {
+    return {
+      title: "Coverage status",
+      value: "Inactive exchange quote",
+      note: "DFM is not publishing an active live board quote for this symbol, so DUBNEWSAI keeps it visible as a monitored legacy name."
+    }
+  }
+
+  if (stock.price > 0) {
+    return {
+      title: "Recovered quote",
+      value: formatCompactCurrency(stock.price, stock.currency || "AED"),
+      note: "Recovered from the fallback market intelligence stack"
+    }
+  }
+
+  return {
+    title: "Coverage recovery",
+    value: "Quote refresh in progress",
+    note: "The symbol stays visible while DUBNEWSAI completes the next verified market sync."
+  }
+}
+
 function BoardRow({ stock }: { stock: MarketStock }) {
   const fallback = stock.is_live_data === false
+  const fallbackContext = getFallbackContext(stock)
 
   return (
     <Link
@@ -73,9 +106,9 @@ function BoardRow({ stock }: { stock: MarketStock }) {
       <div className="space-y-1 text-sm text-white/52">
         {fallback ? (
           <>
-            <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">Last verified snapshot</div>
-            {stock.price > 0 ? <div className="text-xl font-semibold text-white">{formatCompactCurrency(stock.price, stock.currency || "AED")}</div> : null}
-            <div>{stock.data_source === "historical_snapshot" ? "Stored market snapshot" : "Reference board coverage"}</div>
+            <div className="text-sm font-medium uppercase tracking-[0.18em] text-amber-200/82">{fallbackContext.title}</div>
+            <div className="text-xl font-semibold text-white">{fallbackContext.value}</div>
+            <div>{fallbackContext.note}</div>
           </>
         ) : (
           <>

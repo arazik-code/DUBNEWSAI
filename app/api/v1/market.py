@@ -72,6 +72,75 @@ async def get_real_estate_companies(
     return [MarketDataResponse.model_validate(item) for item in data]
 
 
+@router.get("/global-real-estate", response_model=list[MarketDataResponse])
+async def get_global_real_estate_board(
+    request: Request,
+    limit: int = Query(default=16, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[MarketDataResponse]:
+    """Get the global real-estate benchmark board."""
+    del request, current_user
+    data = await MarketService.get_global_real_estate_board(db, limit=limit)
+    return [MarketDataResponse.model_validate(item) for item in data]
+
+
+@router.get("/indices", response_model=list[MarketDataResponse])
+async def get_market_indices(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[MarketDataResponse]:
+    """Get the current market index board."""
+    del request, current_user
+    data = await MarketService.get_market_indices(db, limit=limit)
+    return [MarketDataResponse.model_validate(item) for item in data]
+
+
+@router.get("/commodities", response_model=list[MarketDataResponse])
+async def get_market_commodities(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[MarketDataResponse]:
+    """Get the current commodity board."""
+    del request, current_user
+    data = await MarketService.get_market_commodities(db, limit=limit)
+    return [MarketDataResponse.model_validate(item) for item in data]
+
+
+@router.get("/currencies", response_model=list[CurrencyRateResponse])
+async def get_market_currencies(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[CurrencyRateResponse]:
+    """Get the current FX board."""
+    del request, current_user
+    data = await MarketService.get_latest_currency_rates(db, limit=limit)
+    return [CurrencyRateResponse.model_validate(item) for item in data]
+
+
+@router.get("/provider-utilization")
+async def get_market_provider_utilization(
+    request: Request,
+    limit: int = Query(default=8, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+    _rate_limit: None = Depends(check_tiered_rate_limit),
+) -> list[dict]:
+    """Get market provider utilization for board diagnostics."""
+    del request, current_user
+    return await MarketService.get_provider_utilization_summary(db, limit=limit)
+
+
 @router.get("/economic-indicators", response_model=list[EconomicIndicatorResponse])
 async def get_economic_indicators(
     request: Request,
