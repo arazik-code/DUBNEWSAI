@@ -202,7 +202,13 @@ export type MarketData = {
   volume: number;
   market_cap: number | null;
   currency: string;
+  primary_provider?: string | null;
+  data_quality_score?: number | null;
+  asset_class?: string | null;
+  region?: string | null;
   data_timestamp: string;
+  is_live_data?: boolean;
+  data_source?: string | null;
 };
 
 export type MarketOverview = {
@@ -223,6 +229,51 @@ export type MarketOverview = {
     observed_at: string;
   } | null;
   market_status: Record<string, string> | null;
+  board_health?: Array<{
+    board: string;
+    status: string;
+    total_rows: number;
+    live_rows: number;
+    fallback_rows: number;
+    last_updated: string | null;
+    providers: string[];
+  }>;
+  coverage_snapshot?: {
+    tracked_symbols: number;
+    live_symbols: number;
+    fallback_symbols: number;
+    fx_pairs: number;
+    macro_indicators: number;
+    provider_count: number;
+  };
+  provider_utilization?: Array<{
+    provider: string;
+    type: string;
+    circuit_state: string;
+    total_calls: number;
+    successful_calls: number;
+    failed_calls: number;
+    last_success_at?: string | null;
+  }>;
+  provider_mix?: {
+    active_count: number;
+    dormant_count: number;
+    top_contributors: string[];
+    dormant_providers: string[];
+  };
+  market_brief?: {
+    headline: string;
+    narrative: string;
+    focus_areas: string[];
+    confidence: string;
+  };
+  coverage_alerts?: Array<{
+    board: string;
+    severity: string;
+    message: string;
+    action: string;
+    affected_symbols: string[];
+  }>;
 };
 
 export type PricePrediction = {

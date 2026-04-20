@@ -28,7 +28,7 @@ function buildRoiView(
   fallback: PropertyPreset["roi_defaults"],
 ): ROIResult {
   const projections = Array.isArray(payload.projections)
-    ? (payload.projections as Array<Record<string, unknown>>)
+    ? (payload.projections as Record<string, unknown>[])
     : [];
   const projectionYearFive = projections.find((item) => Number(item.year) === 5);
 
@@ -85,7 +85,10 @@ export default function MarketScreen() {
   const [monthlyExpenses, setMonthlyExpenses] = useState("0");
   const [appreciationRate, setAppreciationRate] = useState("0");
   const [roiResult, setRoiResult] = useState<ROIResult | null>(null);
-  const locationOptions = propertyOptionsQuery.data?.locations ?? [];
+  const locationOptions = useMemo(
+    () => propertyOptionsQuery.data?.locations ?? [],
+    [propertyOptionsQuery.data?.locations],
+  );
   const activeLocation = useMemo(
     () => locationOptions.find((item) => item.name === selectedLocation) ?? null,
     [locationOptions, selectedLocation],
@@ -207,6 +210,14 @@ export default function MarketScreen() {
   const movers = marketOverviewQuery.data?.stocks.slice(0, 8) ?? [];
   const indices = marketOverviewQuery.data?.indices.slice(0, 4) ?? [];
   const leaders = marketOverviewQuery.data?.real_estate_companies.slice(0, 6) ?? [];
+  const globalContext = marketOverviewQuery.data?.global_real_estate.slice(0, 6) ?? [];
+  const commodities = marketOverviewQuery.data?.commodities.slice(0, 6) ?? [];
+  const currencies = marketOverviewQuery.data?.currencies.slice(0, 4) ?? [];
+  const coverageSnapshot = marketOverviewQuery.data?.coverage_snapshot;
+  const providerMix = marketOverviewQuery.data?.provider_mix;
+  const marketBrief = marketOverviewQuery.data?.market_brief;
+  const boardHealth = marketOverviewQuery.data?.board_health?.slice(0, 4) ?? [];
+  const coverageAlerts = marketOverviewQuery.data?.coverage_alerts?.slice(0, 2) ?? [];
 
   if (
     optionsQuery.isLoading ||
@@ -272,10 +283,10 @@ export default function MarketScreen() {
           </View>
           <View style={styles.heroStat}>
             <Text style={[styles.heroValue, { color: colors.text }]}>
-              {formatCompactNumber(movers.length)}
+              {formatCompactNumber(coverageSnapshot?.tracked_symbols ?? movers.length)}
             </Text>
             <Text style={[styles.heroLabel, { color: colors.textMuted }]}>
-              tracked movers
+              tracked symbols
             </Text>
           </View>
         </View>
@@ -284,7 +295,50 @@ export default function MarketScreen() {
             {marketTrendQuery.data.recommendation}
           </Text>
         ) : null}
+        {coverageSnapshot ? (
+          <View style={styles.metricGrid}>
+            <View style={styles.metricItem}>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Live rows</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
+                {formatCompactNumber(coverageSnapshot.live_symbols)}
+              </Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>FX pairs</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
+                {formatCompactNumber(coverageSnapshot.fx_pairs)}
+              </Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Macro signals</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
+                {formatCompactNumber(coverageSnapshot.macro_indicators)}
+              </Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Active providers</Text>
+              <Text style={[styles.metricValue, { color: colors.text }]}>
+                {formatCompactNumber(providerMix?.active_count ?? coverageSnapshot.provider_count)}
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </Surface>
+
+      {marketBrief ? (
+        <Surface style={styles.briefCard}>
+          <Text style={[styles.briefEyebrow, { color: colors.accent }]}>Market brief</Text>
+          <Text style={[styles.briefTitle, { color: colors.text }]}>{marketBrief.headline}</Text>
+          <Text style={[styles.inlineHint, { color: colors.textMuted }]}>{marketBrief.narrative}</Text>
+          <View style={styles.briefList}>
+            {marketBrief.focus_areas.map((item) => (
+              <Text key={item} style={[styles.briefPoint, { color: colors.textSoft }]}>
+                {item}
+              </Text>
+            ))}
+          </View>
+        </Surface>
+      ) : null}
 
       <View>
         <SectionHeader
@@ -447,6 +501,102 @@ export default function MarketScreen() {
           ))}
         </View>
       </View>
+
+      <View>
+        <SectionHeader
+          eyebrow="Coverage"
+          title="Global context, FX, and commodity signal"
+          description="The same multi-board market context that powers the web platform, compressed for mobile use."
+        />
+        {currencies.length ? (
+          <View style={styles.indexGrid}>
+            {currencies.map((item) => (
+              <Surface key={`${item.from_currency}-${item.to_currency}`} style={styles.indexCard}>
+                <Text style={[styles.indexSymbol, { color: colors.text }]}>
+                  {item.from_currency}/{item.to_currency}
+                </Text>
+                <Text style={[styles.indexName, { color: colors.textMuted }]}>FX snapshot</Text>
+                <Text style={[styles.indexChange, { color: colors.text }]}>
+                  {item.rate.toFixed(4)}
+                </Text>
+              </Surface>
+            ))}
+          </View>
+        ) : null}
+        {commodities.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+            {commodities.map((item) => (
+              <View key={item.symbol} style={styles.marketCardWrap}>
+                <MarketCard item={item} onPress={() => router.push(`/market/${encodeURIComponent(item.symbol)}`)} />
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
+        {globalContext.length ? (
+          <View style={styles.leaderList}>
+            {globalContext.map((item) => (
+              <Surface key={item.symbol} style={styles.leaderCard}>
+                <View style={styles.leaderTop}>
+                  <View style={styles.iconBadge}>
+                    <Ionicons name="globe-outline" size={16} color={colors.accent} />
+                  </View>
+                  <Text style={[styles.leaderSymbol, { color: colors.text }]}>{item.symbol}</Text>
+                </View>
+                <Text style={[styles.leaderName, { color: colors.textMuted }]} numberOfLines={2}>
+                  {item.name}
+                </Text>
+                <Text style={[styles.leaderPrice, { color: colors.text }]}>
+                  {formatCurrency(item.price, item.currency)}
+                </Text>
+              </Surface>
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      {boardHealth.length ? (
+        <View>
+          <SectionHeader
+            eyebrow="Board health"
+            title="Coverage quality at a glance"
+            description="Quick signal on which boards are fully live and which ones are leaning on fallback coverage."
+          />
+          <View style={styles.healthList}>
+            {boardHealth.map((item) => (
+              <Surface key={item.board} style={styles.healthCard}>
+                <Text style={[styles.healthTitle, { color: colors.text }]}>{item.board}</Text>
+                <Text style={[styles.healthMeta, { color: colors.textMuted }]}>
+                  {sentenceCase(item.status)} | {item.live_rows}/{item.total_rows} live
+                </Text>
+                <Text style={[styles.healthBody, { color: colors.textSoft }]}>
+                  Providers: {item.providers.length ? item.providers.join(", ") : "Waiting for live provider cycle"}
+                </Text>
+              </Surface>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {coverageAlerts.length ? (
+        <View>
+          <SectionHeader
+            eyebrow="Coverage alerts"
+            title="What needs attention"
+            description="Operational context from the market intelligence layer, without opening the full dashboard."
+          />
+          <View style={styles.healthList}>
+            {coverageAlerts.map((item) => (
+              <Surface key={`${item.board}-${item.message}`} style={styles.healthCard}>
+                <Text style={[styles.healthTitle, { color: colors.text }]}>
+                  {item.board} | {sentenceCase(item.severity)}
+                </Text>
+                <Text style={[styles.healthBody, { color: colors.textMuted }]}>{item.message}</Text>
+                <Text style={[styles.healthBody, { color: colors.textSoft }]}>{item.action}</Text>
+              </Surface>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       <View>
         <SectionHeader
@@ -735,6 +885,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  briefCard: {
+    gap: 10,
+  },
+  briefEyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+  },
+  briefTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 24,
+  },
+  briefList: {
+    gap: 6,
+  },
+  briefPoint: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
   rail: {
     gap: 10,
     paddingRight: 20,
@@ -850,6 +1021,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
+  },
+  healthList: {
+    gap: 12,
+  },
+  healthCard: {
+    gap: 8,
+  },
+  healthTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  healthMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  healthBody: {
+    fontSize: 13,
+    lineHeight: 20,
   },
   leaderCard: {
     width: "47%",

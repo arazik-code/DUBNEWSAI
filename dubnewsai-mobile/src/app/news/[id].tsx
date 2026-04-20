@@ -65,7 +65,7 @@ export default function NewsDetailScreen() {
         </Text>
         <Text style={[styles.title, { color: colors.text }]}>{article.title}</Text>
         <Text style={[styles.meta, { color: colors.textMuted }]}>
-          {formatDateLabel(article.published_at)} · {sentenceCase(article.sentiment)}
+          {formatDateLabel(article.published_at)} | {sentenceCase(article.sentiment)}
         </Text>
       </View>
 

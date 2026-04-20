@@ -242,7 +242,7 @@ export default function WorkspaceScreen() {
               {data.competitor_spotlight.name}
             </Text>
             <Text style={[styles.competitorMeta, { color: colors.textMuted }]}>
-              {data.competitor_spotlight.ticker_symbol || "Private"} · threat level{" "}
+              {data.competitor_spotlight.ticker_symbol || "Private"} | threat level{" "}
               {data.competitor_spotlight.threat_level || "monitoring"}
             </Text>
             <Text style={[styles.competitorBody, { color: colors.textSoft }]}>
